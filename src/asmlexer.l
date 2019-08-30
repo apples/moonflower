@@ -20,7 +20,8 @@
 [ \t\r\n]                           ;
 [;].*\n                             ;
 ":"                                 return ':';
-".entry"                            return TK_D_ENTRY;
+"%entry"                            return TK_M_ENTRY;
+"%export"                           return TK_M_EXPORT;
 ".iconst"                           return TK_D_ICONST;
 ".fconst"                           return TK_D_FCONST;
 ".funcdef"                          return TK_D_FUNCDEF;

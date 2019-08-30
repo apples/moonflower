@@ -40,6 +40,7 @@
 
 %destructor { delete $$; } <string>
 
+%token TK_M_ENTRY TK_M_EXPORT
 %token TK_D_ENTRY TK_D_ICONST TK_D_FCONST TK_D_FUNCDEF
 %token TK_TERMINATE
 %token TK_ISETC TK_FSETC
@@ -60,10 +61,14 @@ chunk: statseq;
 statseq: stat | statseq stat;
 
 stat: TK_ID[id] ':' { context.add_label(*$id, @$); }
+    | TK_M_ENTRY { context.set_entry(@$); }
     | TK_D_ICONST TK_INT[i] { context.emit(value($i)); }
     | TK_D_FCONST TK_FLOAT[f] { context.emit(value($f)); }
     | TK_D_FUNCDEF TK_INT[coff] { context.emit(value(function_def($coff))); }
-    | TK_TERMINATE { context.emit(instruction(TERMINATE)); }
-    | TK_ISETC TK_INT[a] { context.emit(instruction(ISETC, $a)); }
+    | TK_TERMINATE TK_INT[a] { context.emit(instruction(TERMINATE, $a)); }
+    | TK_ISETC TK_INT[a] TK_INT[b] { context.emit(instruction(ISETC, $a, $b, 0)); }
+    | TK_IADD TK_INT[a] TK_INT[b] TK_INT[c] { context.emit(instruction(IADD, $a, $b, $c)); }
+    | TK_RET { context.emit(instruction(RET)); }
+    ;
 
 %%

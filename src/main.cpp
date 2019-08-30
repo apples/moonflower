@@ -8,7 +8,7 @@
 #include <vector>
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
+    if (argc != 2) {
         std::cerr << "usage: moonflower <bytecode_file>" << std::endl;
         return EXIT_FAILURE;
     }
@@ -20,18 +20,37 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    std::vector<char> data(std::istreambuf_iterator<char>(file), {});
+    int entry_point;
+    moonflower::module M;
 
-    auto program = reinterpret_cast<const moonflower::bc_entity*>(data.data());
+    int textsize;
+
+    file.read(reinterpret_cast<char*>(&entry_point), 4);
+    file.read(reinterpret_cast<char*>(&textsize), 4);
+
+    M.text.resize(textsize);
+
+    file.read(reinterpret_cast<char*>(M.text.data()), textsize * sizeof(moonflower::bc_entity));
+
+    moonflower::symbol exp;
+
+    file.read(reinterpret_cast<char*>(&exp.addr), 4);
+
+    while (exp.addr != -1) {
+        int nlen;
+        file.read(reinterpret_cast<char*>(&nlen), 4);
+        exp.name.resize(nlen);
+        file.read(exp.name.data(), nlen);
+        file.read(reinterpret_cast<char*>(&exp.addr), 4);
+    }
 
     moonflower::state S;
 
-    S.text = std::make_unique<moonflower::bc_entity[]>(data.size());
-    S.textsize = data.size();
+    S.modules.push_back(std::move(M));
     S.stacksize = 8 * 1024 * 1024; // 64 MB stack
     S.stack = std::make_unique<moonflower::value[]>(S.stacksize);
 
-    auto ret = moonflower::interp(S); // +1 because expecting 1 result
+    auto ret = moonflower::interp(S, 0, entry_point, 1);
 
     if (ret != 0) {
         std::cerr << "error: terminated: " << ret << std::endl;

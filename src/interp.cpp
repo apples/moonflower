@@ -3,14 +3,21 @@
 namespace moonflower {
 
 constexpr int OFF_RET_ADDR = 0;
-constexpr int OFF_RET_CONST = 1;
-constexpr int OFF_RET_STACK = 2;
+constexpr int OFF_RET_STACK = 1;
+constexpr int OFF_RET_INC = 2;
 
-int interp(state& S) {
-    const bc_entity* PC = S.text.get() + 1;
-    const bc_entity* constants = S.text.get() + S.text.get()->val.funcdef.coff;
-    value* stack = S.stack.get();
+int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
+    const bc_entity* text = S.modules[mod_idx].text.data();
+    const bc_entity* PC = text + func_addr;
+    const bc_entity* constants = PC - PC->val.funcdef.coff;
+    value* stack = S.stack.get() + retc;
     instruction I;
+
+    ++PC;
+
+    stack[OFF_RET_ADDR].func = {0, 0};
+    stack[OFF_RET_STACK].stk = {0, 0};
+    stack += OFF_RET_INC;
 
     const auto decode = [&I, &PC]{ I = PC->instr; ++PC; };
 
@@ -59,21 +66,29 @@ int interp(state& S) {
             
             // control ops
             case JMP:
-                PC = S.text.get() + stack[I.BC.B].i;
+                PC = text + I.D;
                 break;
-            case CALL:
-                stack[I.A + OFF_RET_ADDR].i = PC - S.text.get();
-                stack[I.A + OFF_RET_CONST].i = constants - S.text.get();
-                stack[I.A + OFF_RET_STACK].i = I.A;
-                PC = S.text.get() + stack[I.BC.B].i;
+            case CALL: {
+                stack[I.A + OFF_RET_ADDR].func = {mod_idx, std::uint16_t(PC - text)};
+                stack[I.A + OFF_RET_STACK].stk.coff = constants - text;
+                stack[I.A + OFF_RET_STACK].stk.soff = I.A;
+                const auto& addr = stack[I.BC.B].func;
+                mod_idx = addr.mod;
+                text = S.modules[mod_idx].text.data();
+                PC = text + addr.off;
                 constants = PC - PC->val.funcdef.coff;
-                stack += I.A + 3;
+                stack += I.A + OFF_RET_INC;
                 break;
-            case RET:
-                PC = S.text.get() + stack[OFF_RET_ADDR - 3].i;
-                constants = S.text.get() + stack[OFF_RET_CONST - 3].i;
-                stack -= stack[OFF_RET_STACK - 3].i;
+            }
+            case RET: {
+                const auto& addr = stack[OFF_RET_ADDR - OFF_RET_INC].func;
+                mod_idx = addr.mod;
+                text = S.modules[mod_idx].text.data();
+                PC = text + addr.off;
+                constants = text + stack[OFF_RET_STACK - OFF_RET_INC].stk.coff;
+                stack -= stack[OFF_RET_STACK - OFF_RET_INC].stk.soff;
                 break;
+            }
 
             // invalid ops
             default:

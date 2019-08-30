@@ -49,15 +49,29 @@ struct function_def {
     explicit function_def(std::int8_t coff) : coff(coff) {}
 };
 
+struct function_addr {
+    std::uint16_t mod;
+    std::uint16_t off;
+};
+
+struct stack_rep {
+    std::uint16_t coff;
+    std::uint16_t soff;
+};
+
 union alignas(std::int32_t) value {
     std::int32_t i;
     float f;
     function_def funcdef;
+    function_addr func;
+    stack_rep stk;
 
     value() = default;
     explicit value(std::int32_t i) : i(i) {}
     explicit value(float f) : f(f) {}
     explicit value(const function_def& f) : funcdef(f) {}
+    explicit value(const function_addr& f) : func(f) {}
+    explicit value(const stack_rep& s) : stk(s) {}
 };
 
 union bc_entity {
@@ -75,13 +89,6 @@ static_assert(alignof(value) == alignof(instruction));
 static_assert(sizeof(bc_entity) == sizeof(instruction));
 static_assert(alignof(bc_entity) == alignof(instruction));
 
-struct state {
-    std::unique_ptr<bc_entity[]> text;
-    std::unique_ptr<value[]> stack;
-    std::size_t textsize;
-    std::size_t stacksize;
-};
-
 struct symbol {
     std::string name;
     int addr;
@@ -90,6 +97,12 @@ struct symbol {
 struct module {
     std::vector<bc_entity> text;
     std::vector<symbol> exports;
+};
+
+struct state {
+    std::vector<module> modules;
+    std::unique_ptr<value[]> stack;
+    std::size_t stacksize;
 };
 
 }

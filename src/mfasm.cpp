@@ -43,8 +43,22 @@ int main(int argc, char* argv[]) {
             return EXIT_FAILURE;
         }
         const auto data = reinterpret_cast<const char*>(tu.m.text.data());
-        const auto size = tu.m.text.size() * sizeof(moonflower::bc_entity);
-        if (!ofile.write(data, size)) {
+        const int size = tu.m.text.size();
+
+        ofile.write(reinterpret_cast<const char*>(&tu.entry_point), 4);
+        ofile.write(reinterpret_cast<const char*>(&size), 4);
+        ofile.write(data, size * sizeof(moonflower::bc_entity));
+
+        for (const auto& exp : tu.m.exports) {
+            ofile.write(reinterpret_cast<const char*>(&exp.addr), 4);
+            const int nlen = exp.name.length();
+            ofile.write(reinterpret_cast<const char*>(&nlen), 4);
+            ofile.write(exp.name.data(), nlen);
+        }
+        const auto endexp = -1;
+        ofile.write(reinterpret_cast<const char*>(&endexp), 4);
+
+        if (!ofile) {
             std::cerr << "failed to write to file: " << argv[2] << std::endl;
             return EXIT_FAILURE;
         }

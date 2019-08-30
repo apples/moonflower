@@ -10,6 +10,8 @@ translation translate(const char* source, std::size_t len) {
     moonflower::asm_context context;
     yyscan_t scanner;
 
+    context.emit(instruction(TERMINATE, 0));
+
     moonflowerasmlex_init(&scanner);
     
     auto buffer = moonflowerasm_scan_bytes(source, len, scanner);
@@ -27,7 +29,8 @@ translation translate(const char* source, std::size_t len) {
             std::move(context.program),
             {}
         },
-        std::move(context.messages)
+        std::move(context.messages),
+        context.entry_point
     };
 }
 
