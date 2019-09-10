@@ -1,5 +1,7 @@
 #include "interp.hpp"
 
+#include <iostream>
+
 namespace moonflower {
 
 constexpr int OFF_RET_ADDR = 0;
@@ -9,14 +11,11 @@ constexpr int OFF_RET_INC = 2;
 int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     const bc_entity* text = S.modules[mod_idx].text.data();
     const bc_entity* PC = text + func_addr;
-    const bc_entity* constants = PC - PC->val.funcdef.coff;
     value* stack = S.stack.get() + retc;
     instruction I;
 
-    ++PC;
-
     stack[OFF_RET_ADDR].func = {0, 0};
-    stack[OFF_RET_STACK].stk = {0, 0};
+    stack[OFF_RET_STACK].stk = {0};
     stack += OFF_RET_INC;
 
     const auto decode = [&I, &PC]{ I = PC->instr; ++PC; };
@@ -30,10 +29,10 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
             
             // constant loads
             case ISETC:
-                stack[I.A].i = constants[I.BC.B].val.i;
+                stack[I.A].i = text[I.D].val.i;
                 break;
             case FSETC:
-                stack[I.A].f = constants[I.BC.B].val.f;
+                stack[I.A].f = text[I.D].val.f;
                 break;
 
             // integer ops
@@ -70,13 +69,11 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 break;
             case CALL: {
                 stack[I.A + OFF_RET_ADDR].func = {mod_idx, std::uint16_t(PC - text)};
-                stack[I.A + OFF_RET_STACK].stk.coff = constants - text;
                 stack[I.A + OFF_RET_STACK].stk.soff = I.A;
                 const auto& addr = stack[I.BC.B].func;
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 PC = text + addr.off;
-                constants = PC - PC->val.funcdef.coff;
                 stack += I.A + OFF_RET_INC;
                 break;
             }
@@ -85,7 +82,6 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 PC = text + addr.off;
-                constants = text + stack[OFF_RET_STACK - OFF_RET_INC].stk.coff;
                 stack -= stack[OFF_RET_STACK - OFF_RET_INC].stk.soff;
                 break;
             }

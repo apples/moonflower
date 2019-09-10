@@ -34,7 +34,7 @@ inline std::ostream& operator<<(std::ostream& out, const compile_message& error)
             break;
     }
 
-    out << error.loc.first_line << "," << error.loc.first_column << ": ";
+    out << error.loc.begin.line << "," << error.loc.begin.column << ": ";
     out << error.message << "\n";
 
     return out;

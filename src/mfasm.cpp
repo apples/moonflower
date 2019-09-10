@@ -1,12 +1,13 @@
 
 #include "assembler.hpp"
+#include "asmparser.hpp"
 
 #include <cstddef>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) try {
     if (argc != 3) {
         std::cerr << "usage: mfasm <source> <out>" << std::endl;
         return EXIT_FAILURE;
@@ -65,4 +66,10 @@ int main(int argc, char* argv[]) {
     }
 
     return EXIT_SUCCESS;
+} catch (const moonflowerasm::parser::syntax_error& e) {
+    std::cerr << "Exception: " << e.what() << "(" << e.location << ")" << std::endl;
+    return EXIT_FAILURE;
+} catch (const std::exception& e) {
+    std::cerr << "Exception: " << e.what() << std::endl;
+    return EXIT_FAILURE;
 }

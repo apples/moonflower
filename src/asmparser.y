@@ -1,74 +1,90 @@
 /// Parser grammar
+%require "3.3"
+%language "c++"
 
-%define api.prefix {moonflowerasm}
-%define parse.error verbose
+%define api.namespace {moonflowerasm}
+%define api.parser.class {parser}
+%define api.value.type variant
+%define api.token.constructor
+%define parse.trace
 
-// Defines a reentrant parser and lexer.
-// The first parse-param should be a `yyscan_t`,
-// but due to a circular dependency, this seems impossible.
-%define api.pure full
-%lex-param {yyscan_t scanner}
-%parse-param {void* scanner} {moonflower::asm_context& context}
-
+%defines
 %locations
 
 %code requires {
     #include "asm_context.hpp"
-    #include "location.hpp"
+    #include "location.hh"
     #include <string>
 
-    using MOONFLOWERASMLTYPE = moonflower::location;
-    #define MOONFLOWERASMLTYPE_IS_DECLARED 1
-    #define MOONFLOWERASMLTYPE_IS_TRIVIAL 1
+    namespace moonflowerasm {
+        class lexer;
+    }
 }
 
-%union {
-    int i;
-    float f;
-    std::string* string;
-}
+%parse-param {moonflowerasm::lexer& lexer} {moonflower::asm_context& context}
 
 %code {
     #include "asmlexer.hpp"
 
-    using namespace moonflower;
+    #undef yylex
+    #define yylex lexer.lex
 
-    static void yyerror(YYLTYPE* loc, void* scanner, asm_context& context, const char *s) {
-        context.messages.emplace_back(s, *loc);
-    }
+    using namespace moonflower;
 }
 
-%destructor { delete $$; } <string>
+%define api.token.prefix {TK_}
 
-%token TK_M_ENTRY TK_M_EXPORT
-%token TK_D_ENTRY TK_D_ICONST TK_D_FCONST TK_D_FUNCDEF
-%token TK_TERMINATE
-%token TK_ISETC TK_FSETC
-%token TK_IADD TK_IMUL TK_ISUB TK_IDIV
-%token TK_FADD TK_FMUL TK_FSUB TK_FDIV
-%token TK_JMP TK_CALL TK_RET
+%token M_ENTRY M_EXPORT M_IMPORT
+%token D_ENTRY D_ICONST D_FCONST D_FUNCDEF
+%token TERMINATE
+%token ISETC FSETC
+%token IADD IMUL ISUB IDIV
+%token FADD FMUL FSUB FDIV
+%token JMP CALL RET
 
-%token <i> TK_INT
-%token <f> TK_FLOAT
-%token <string> TK_ID
+%token <int> INT
+%token <float> FLOAT
+%token <std::string> ID
+
+%token EOF 0
 
 %start chunk
 
 %%
 
-chunk: statseq;
+chunk: statseq EOF;
 
 statseq: stat | statseq stat;
 
-stat: TK_ID[id] ':' { context.add_label(*$id, @$); }
-    | TK_M_ENTRY { context.set_entry(@$); }
-    | TK_D_ICONST TK_INT[i] { context.emit(value($i)); }
-    | TK_D_FCONST TK_FLOAT[f] { context.emit(value($f)); }
-    | TK_D_FUNCDEF TK_INT[coff] { context.emit(value(function_def($coff))); }
-    | TK_TERMINATE TK_INT[a] { context.emit(instruction(TERMINATE, $a)); }
-    | TK_ISETC TK_INT[a] TK_INT[b] { context.emit(instruction(ISETC, $a, $b, 0)); }
-    | TK_IADD TK_INT[a] TK_INT[b] TK_INT[c] { context.emit(instruction(IADD, $a, $b, $c)); }
-    | TK_RET { context.emit(instruction(RET)); }
+stat: ID[id] ':' { context.add_label($id, @$); }
+
+    | M_ENTRY { context.set_entry(@$); }
+    | M_EXPORT ID[name] { context.add_export($name, @$); }
+    | M_IMPORT ID[modname] { context.begin_import($modname); } '(' imports ')' { context.end_import(@$); }
+
+    | D_ICONST INT[i] { context.emit(value($i)); }
+    | D_FCONST FLOAT[f] { context.emit(value($f)); }
+
+    | TERMINATE INT[a] { context.emit(instruction(TERMINATE, $a)); }
+
+    | ISETC INT[a] INT[d] { context.emit(instruction(ISETC, $a, $d)); }
+    | ISETC INT[a] ID[id] {
+        auto addr = context.get_label($id);
+        if (addr == -1) context.await_label($id);
+        context.emit(instruction(ISETC, $a, addr));
+    }
+
+    | IADD INT[a] INT[b] INT[c] { context.emit(instruction(IADD, $a, $b, $c)); }
+
+    | RET { context.emit(instruction(RET)); }
     ;
 
+imports: ID[name] { context.import($name); }
+       | imports ID[name] { context.import($name); }
+       ;
+
 %%
+
+void moonflowerasm::parser::error(const moonflowerasm::location& loc, const std::string& msg) {
+    throw syntax_error(loc, msg);
+}

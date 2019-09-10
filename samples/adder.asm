@@ -1,6 +1,6 @@
+fortytwo:
     .iconst 42
 %entry
-    .funcdef 1
-    isetc 0 0
+    isetc 0 fortytwo
     iadd -3 0 0
     ret

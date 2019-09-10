@@ -1,12 +1,9 @@
 #pragma once
 
+#include "location.hh"
+
 namespace moonflower {
 
-struct location {
-    int first_line = 0;
-    int first_column = 0;
-    int last_line = 0;
-    int last_column = 0;
-};
+using moonflowerasm::location;
 
 }

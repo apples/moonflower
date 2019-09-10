@@ -55,7 +55,6 @@ struct function_addr {
 };
 
 struct stack_rep {
-    std::uint16_t coff;
     std::uint16_t soff;
 };
 
@@ -94,9 +93,15 @@ struct symbol {
     int addr;
 };
 
+struct import {
+    std::string modname;
+    std::vector<symbol> symbols;
+};
+
 struct module {
     std::vector<bc_entity> text;
     std::vector<symbol> exports;
+    std::vector<import> imports;
 };
 
 struct state {

@@ -4,31 +4,43 @@
 #include "asmparser.hpp"
 #include "asmlexer.hpp"
 
+#include <algorithm>
+
 namespace moonflower {
 
 translation translate(const char* source, std::size_t len) {
-    moonflower::asm_context context;
-    yyscan_t scanner;
+    auto context = moonflower::asm_context{};
 
     context.emit(instruction(TERMINATE, 0));
 
-    moonflowerasmlex_init(&scanner);
-    
-    auto buffer = moonflowerasm_scan_bytes(source, len, scanner);
-    
-    moonflowerasmset_lineno(1, scanner);
+    auto lexer = moonflowerasm::lexer{source};
+    auto parser = moonflowerasm::parser{lexer, context};
 
-    bool success = moonflowerasmparse(scanner, context) == 0;
+    parser.set_debug_level(1);
+
+    bool success = parser.parse() == 0;
     
-    moonflowerasm_delete_buffer(buffer, scanner);
-    moonflowerasmlex_destroy(scanner);
+    module m;
+    m.text = std::move(context.program);
+    m.exports.reserve(context.exports.size());
+
+    for (const auto& [name, addr] : context.exports) {
+        m.exports.push_back({ name, addr });
+    }
+
+    for (const auto& [modname, imps] : context.imports) {
+        std::vector<symbol> syms;
+
+        for (const auto& [name, addr] : imps) {
+            syms.push_back({ name, addr });
+        }
+
+        m.imports.push_back({ modname, std::move(syms) });
+    }
 
     return {
         success ? result::SUCCESS : result::FAIL,
-        {
-            std::move(context.program),
-            {}
-        },
+        m,
         std::move(context.messages),
         context.entry_point
     };
