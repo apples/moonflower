@@ -27,6 +27,21 @@ enum opcode : uint8_t {
     RET,
 };
 
+enum class binop : uint8_t {
+    ADD,
+    SUB,
+    MUL,
+    DIV,
+};
+
+struct type {
+    enum kind {
+        INTEGER,
+    };
+
+    kind kind;
+};
+
 struct alignas(std::int32_t) instruction {
     opcode OP;
     std::int8_t A;
