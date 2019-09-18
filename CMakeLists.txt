@@ -29,3 +29,17 @@ add_executable(mfasm
 set_target_properties(mfasm PROPERTIES CXX_STANDARD 17)
 target_include_directories(mfasm PUBLIC src ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(mfasm ${REFLEX_LIB})
+
+flex_target(scriptlexer src/scriptlexer.l ${CMAKE_CURRENT_BINARY_DIR}/scriptlexer.cpp
+    DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/scriptlexer.hpp)
+bison_target(scriptparser src/scriptparser.y ${CMAKE_CURRENT_BINARY_DIR}/scriptparser.cpp
+    DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/scriptparser.hpp)
+add_flex_bison_dependency(scriptlexer scriptparser)
+
+add_executable(mfsc
+    ${BISON_scriptparser_OUTPUTS}
+    ${FLEX_scriptlexer_OUTPUTS}
+    src/mfsc.cpp)
+set_target_properties(mfsc PROPERTIES CXX_STANDARD 17)
+target_include_directories(mfsc PUBLIC src ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(mfsc ${REFLEX_LIB})

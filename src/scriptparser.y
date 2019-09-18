@@ -10,7 +10,7 @@
 
 %defines
 %locations
-%define api.location.type {moonfloar::location}
+%define api.location.type {moonflower::location}
 
 %code requires {
     #include "script_context.hpp"
@@ -22,10 +22,10 @@
     }
 }
 
-%parse-param {moonflower_script::lexer& lexer} {moonflower::script_context& context}
+%parse-param {moonflower_script::lexer& lexer} {moonflower_script::script_context& context}
 
 %code {
-    #include "asmlexer.hpp"
+    #include "scriptlexer.hpp"
 
     #undef yylex
     #define yylex lexer.lex
@@ -47,20 +47,14 @@
 
 %token EOF 0
 
-%type <int> literal expr binaryop
+%type <int> expr prefixexpr literal binaryop functioncall
+%type <int> arguments argumentseq
 
 %start chunk
 
 %%
 
-chunk: imports topblock EOF;
-
-imports: %empty
-       | import
-       | imports import
-       ;
-
-import: IMPORT modname AS IDENTIFIER;
+chunk: topblock EOF;
 
 topblock: %empty
         | topstatement
@@ -68,10 +62,9 @@ topblock: %empty
         ;
 
 topstatement: funcdecl
-            | EXPORT funcdecl
             ;
 
-funcdecl: FUNC IDENTIFIER funcbody;
+funcdecl: FUNC IDENTIFIER[id] { context.begin_func($id); } funcbody { context.end_func(); };
 
 funcbody: '(' funcparams ')' ':' type '{' block '}';
 
@@ -79,47 +72,61 @@ funcparams: %empty
           | paramseq
           ;
 
-paramseq: IDENTIFIER ':' type
-        | paramseq ',' IDENTIFIER ':' type
+paramseq: paramdecl
+        | paramseq ',' paramdecl
         ;
+
+paramdecl: IDENTIFIER[id] ':' type { context.add_param($id); };
 
 block: %empty
      | block statement
      | block retstat
      ;
 
-retstat: RETURN
-       | RETURN expr
+retstat: RETURN { context.emit_return(@$); }
+       | RETURN expr { context.emit_return(@$); }
        ;
 
 type: IDENTIFIER;
 
-statement: assignment
-         | vardecl
+statement: vardecl
+         | functioncall
          ;
 
-vardecl: VAR IDENTIFIER '=' expr {
-           context.declare($IDENTIFIER);
-       }
+vardecl: VAR IDENTIFIER '=' expr { context.emit_vardecl($IDENTIFIER, @$); }
        ;
 
-expr: literal { $$ = $1; }
+expr: prefixexpr { $$ = $1; }
     | binaryop { $$ = $1; }
-    | IDENTIFIER { $$ = context.lookup($IDENTIFIER); }
     ;
 
-literal: INTEGER { $$ = context.load_const_int($INTEGER); }
+prefixexpr: literal { $$ = $1; }
+          | functioncall { $$ = $1; }
+          | IDENTIFIER { $$ = context.expr_id($IDENTIFIER, @$); }
+          ;
+
+literal: INTEGER { $$ = context.expr_const_int($INTEGER); }
        ;
 
-binaryop: expr[lhs] '+' expr[rhs] { $$ = context.binop(binop::ADD, $lhs, $rhs); }
-        | expr[lhs] '-' expr[rhs] { $$ = context.binop(binop::SUB, $lhs, $rhs); }
-        | expr[lhs] '*' expr[rhs] { $$ = context.binop(binop::MUL, $lhs, $rhs); }
-        | expr[lhs] '/' expr[rhs] { $$ = context.binop(binop::DIV, $lhs, $rhs); }
+binaryop: expr[lhs] '+' expr[rhs] { $$ = context.expr_binop(binop::ADD, $lhs, $rhs, @$); }
+        | expr[lhs] '-' expr[rhs] { $$ = context.expr_binop(binop::SUB, $lhs, $rhs, @$); }
+        | expr[lhs] '*' expr[rhs] { $$ = context.expr_binop(binop::MUL, $lhs, $rhs, @$); }
+        | expr[lhs] '/' expr[rhs] { $$ = context.expr_binop(binop::DIV, $lhs, $rhs, @$); }
         ;
+
+functioncall: prefixexpr '(' arguments ')' { $$ = context.expr_call($arguments, @$); };
+
+arguments: %empty { $$ = 0; }
+         | argumentseq { $$ = $1; }
+         ;
+
+argumentseq: expr { $$ = 1; }
+           | argumentseq[sum] ',' expr { $$ = $sum + 1; }
+           ;
 
 %%
 
-void moonflowerasm::parser::error(const moonflowerasm::location& loc, const std::string& msg) {
+void moonflower_script::parser::error(const moonflower_script::location& loc, const std::string& msg) {
     throw syntax_error(loc, msg);
 }
 

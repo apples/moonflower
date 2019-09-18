@@ -1,0 +1,4 @@
+
+func add(x: int): int {
+    return x + 42
+}

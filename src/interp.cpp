@@ -14,7 +14,7 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     value* stack = S.stack.get() + retc;
     instruction I;
 
-    stack[OFF_RET_ADDR].func = {0, 0};
+    stack[OFF_RET_ADDR].gaddr = {0, 0};
     stack[OFF_RET_STACK].stk = {0};
     stack += OFF_RET_INC;
 
@@ -33,6 +33,18 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 break;
             case FSETC:
                 stack[I.A].f = text[I.D].val.f;
+                break;
+            
+            // address load
+            case SETADR:
+                stack[I.A].gaddr = {mod_idx, std::uint16_t(I.D)};
+                break;
+            
+            // copy
+            case CPY:
+                for (int i = 0; i < I.BC.C; ++i) {
+                    stack[I.A + i] = stack[I.BC.B + i];
+                }
                 break;
 
             // integer ops
@@ -68,9 +80,9 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 PC = text + I.D;
                 break;
             case CALL: {
-                stack[I.A + OFF_RET_ADDR].func = {mod_idx, std::uint16_t(PC - text)};
+                stack[I.A + OFF_RET_ADDR].gaddr = {mod_idx, std::uint16_t(PC - text)};
                 stack[I.A + OFF_RET_STACK].stk.soff = I.A;
-                const auto& addr = stack[I.BC.B].func;
+                const auto& addr = stack[I.BC.B].gaddr;
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 PC = text + addr.off;
@@ -78,7 +90,7 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 break;
             }
             case RET: {
-                const auto& addr = stack[OFF_RET_ADDR - OFF_RET_INC].func;
+                const auto& addr = stack[OFF_RET_ADDR - OFF_RET_INC].gaddr;
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 PC = text + addr.off;

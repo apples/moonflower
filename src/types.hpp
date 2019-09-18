@@ -1,16 +1,22 @@
 #pragma once
 
+#include "utility.hpp"
+
 #include <cstdint>
 #include <memory>
+#include <variant>
 #include <vector>
 
 namespace moonflower {
 
-enum opcode : uint8_t {
+enum opcode : std::uint8_t {
     TERMINATE,
 
     ISETC,
     FSETC,
+    SETADR,
+
+    CPY,
 
     IADD,
     ISUB,
@@ -27,20 +33,37 @@ enum opcode : uint8_t {
     RET,
 };
 
-enum class binop : uint8_t {
-    ADD,
-    SUB,
-    MUL,
-    DIV,
+enum class terminate_reason : std::int8_t {
+    NONE,
+    BAD_LITERAL_TYPE,
+    BAD_ARITHMETIC_TYPE,
 };
 
 struct type {
-    enum kind {
-        INTEGER,
+    struct nothing {};
+
+    struct integer {};
+
+    struct function {
+        recursive_wrapper<type> ret_type;
+        std::vector<type> params;
     };
 
-    kind kind;
+    struct closure {
+        function base;
+    };
+
+    std::variant<nothing, integer, function, closure> t;
 };
+
+inline int value_size(const type& t) {
+    return std::visit(overload {
+        [](const type::nothing&) { return 0; },
+        [](const type::integer&) { return 1; },
+        [](const type::function&) { return 0; },
+        [](const type::closure&) { return 1; },
+    }, t.t);
+}
 
 struct alignas(std::int32_t) instruction {
     opcode OP;
@@ -57,14 +80,7 @@ struct alignas(std::int32_t) instruction {
     instruction(opcode o, std::int8_t a, std::int16_t d) : OP(o), A(a), D(d) {}
 };
 
-struct function_def {
-    std::int8_t coff;
-
-    function_def() = default;
-    explicit function_def(std::int8_t coff) : coff(coff) {}
-};
-
-struct function_addr {
+struct global_addr {
     std::uint16_t mod;
     std::uint16_t off;
 };
@@ -76,15 +92,13 @@ struct stack_rep {
 union alignas(std::int32_t) value {
     std::int32_t i;
     float f;
-    function_def funcdef;
-    function_addr func;
+    global_addr gaddr;
     stack_rep stk;
 
     value() = default;
     explicit value(std::int32_t i) : i(i) {}
     explicit value(float f) : f(f) {}
-    explicit value(const function_def& f) : funcdef(f) {}
-    explicit value(const function_addr& f) : func(f) {}
+    explicit value(const global_addr& a) : gaddr(a) {}
     explicit value(const stack_rep& s) : stk(s) {}
 };
 
