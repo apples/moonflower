@@ -142,13 +142,9 @@ struct script_context {
 
     void begin_func(const std::string& name) {
         cur_func = {name};
-
-        std::clog << "\n{func " << name << "\n" << std::endl;
     }
 
     void end_func() {
-        std::clog << "\n{endfunc}\n" << std::endl;
-
         auto const_offset = program.size();
 
         for (const auto& c : cur_func.constants) {
@@ -223,19 +219,6 @@ struct script_context {
 
     void push_expr(expression expr) {
         cur_func.active_exprs.push_back(expr);
-
-        std::clog << "\n";
-        
-        std::visit(overload {
-            [&](const expression::nothing&) { std::clog << "(nothing)"; },
-            [&](const expression::stack_id& id) { std::clog << "(stack_id " << id.addr << ")"; },
-            [&](const expression::function& id) { std::clog << "(function " << id.addr << ")"; },
-            [&](const expression::constant& id) { std::clog << "(constant " << id.addr << ")"; },
-            [&](const expression::binary& id) { std::clog << "(binary " << int(id.op) << ")"; },
-            [&](const expression::call& call) { std::clog << "(call " << call.nargs << ")"; },
-        }, expr.expr);
-
-        std::clog << "\n" << std::endl;
     }
 
     stack_object get_return_object() {
@@ -358,8 +341,6 @@ struct script_context {
     }
 
     void emit_return(const location& loc) {
-        std::clog << "\n{return}\n" << std::endl;
-
         if (!cur_func.active_exprs.empty()) {
             auto type = cur_func.active_exprs.back().type;
             auto result = eval_expr(0, loc);
