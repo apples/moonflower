@@ -1,4 +1,8 @@
 
+func get42(): int {
+    return 42
+}
+
 func add(x: int): int {
-    return x + 42
+    return x + get42()
 }

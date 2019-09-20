@@ -14,6 +14,8 @@
 
 namespace moonflower_script {
 
+struct script_context;
+
 using namespace moonflower;
 
 enum class category : uint8_t {
@@ -23,11 +25,11 @@ enum class category : uint8_t {
 
 namespace addresses {
     struct local {
-        int addr;
+        int value;
     };
 
     struct global {
-        int addr;
+        int value;
     };
 
     using address = std::variant<local, global>;
@@ -35,9 +37,18 @@ namespace addresses {
 
 using addresses::address;
 
+struct stack_object {
+    addresses::local addr;
+    type t;
+};
+
 struct object {
-    address address;
-    type type;
+    address addr;
+    type t;
+
+    object() = default;
+    object(address a, type t) : addr(a), t(t) {}
+    object(const stack_object& sobj) : addr(sobj.addr), t(sobj.t) {}
 };
 
 struct constant {
@@ -83,13 +94,26 @@ struct expression {
     category category;
 };
 
+struct variable {
+    std::string name;
+    stack_object obj;
+
+    variable() = default;
+    variable(std::string name, stack_object obj) : name(std::move(name)), obj(std::move(obj)) {}
+};
+
 struct function_context {
+    std::string name;
     std::vector<bc_entity> text;
     std::vector<constant> constants;
     int next_constant = 0;
     std::vector<expression> active_exprs;
-    std::unordered_map<std::string, object> stack_scope;
+    std::vector<variable> local_stack;
+    std::vector<stack_object> expr_stack;
     int stack_top = 0;
+
+    function_context() = default;
+    function_context(std::string name) : name(std::move(name)) {}
 };
 
 struct script_context {
@@ -117,15 +141,23 @@ struct script_context {
     }
 
     void begin_func(const std::string& name) {
-        cur_func = {};
+        cur_func = {name};
+
+        std::clog << "\n{func " << name << "\n" << std::endl;
     }
 
     void end_func() {
+        std::clog << "\n{endfunc}\n" << std::endl;
+
         auto const_offset = program.size();
 
         for (const auto& c : cur_func.constants) {
             program.push_back(value{c.val.i});
         }
+
+        auto entry = int(program.size());
+
+        static_scope[cur_func.name] = {addresses::global{entry}, {type::function{type{type::integer{}}, {}}}}; // TODO: function types
 
         for (const auto& bc : cur_func.text) {
             auto result = bc;
@@ -139,21 +171,84 @@ struct script_context {
     }
 
     void add_param(const std::string& name) {
-        cur_func.stack_scope[name] = object{addresses::local{cur_func.stack_top}, {type::integer{}}};
+        add_local(name);
+    }
+
+    auto add_local(const std::string& name) -> const stack_object& {
+        if (!cur_func.expr_stack.empty()) {
+            throw std::runtime_error("Can't add local while expressions are on the stack");
+        }
+        cur_func.local_stack.emplace_back(name, stack_object{{cur_func.stack_top}, {type::integer{}}});
         ++cur_func.stack_top;
-    }    
+        return cur_func.local_stack.back().obj;
+    }
+
+    void promote_local(const std::string& name) {
+        if (cur_func.expr_stack.size() != 1) {
+            throw std::runtime_error("Only one object must be on the stack to promote");
+        }
+        cur_func.local_stack.emplace_back(name, std::move(cur_func.expr_stack.back()));
+        cur_func.expr_stack.pop_back();
+    }
+
+    auto push_object(const type& t) -> const stack_object& {
+        cur_func.expr_stack.push_back({addresses::local{cur_func.stack_top}, t});
+        cur_func.stack_top += value_size(t);
+        return cur_func.expr_stack.back();
+    }
+
+    void pop_object(const stack_object& obj) {
+        if (cur_func.expr_stack.empty()) {
+            throw std::runtime_error("Nothing to pop!");
+        }
+        if (obj.addr.value != cur_func.expr_stack.back().addr.value) {
+            throw std::runtime_error("Popping the wrong object!");
+        }
+        emit_destroy(obj);
+        cur_func.stack_top = obj.addr.value;
+        cur_func.expr_stack.pop_back();
+    }
+
+    void pop_objects_until(int pos) {
+        while (cur_func.expr_stack.size() > pos) {
+            emit_destroy(cur_func.expr_stack.back());
+            cur_func.stack_top = cur_func.expr_stack.back().addr.value;
+            cur_func.expr_stack.pop_back();
+        }
+    }
+
+    void emit_destroy(const object& obj) {
+        // nothing needs it yet...
+    }
 
     void push_expr(expression expr) {
         cur_func.active_exprs.push_back(expr);
+
+        std::clog << "\n";
+        
+        std::visit(overload {
+            [&](const expression::nothing&) { std::clog << "(nothing)"; },
+            [&](const expression::stack_id& id) { std::clog << "(stack_id " << id.addr << ")"; },
+            [&](const expression::function& id) { std::clog << "(function " << id.addr << ")"; },
+            [&](const expression::constant& id) { std::clog << "(constant " << id.addr << ")"; },
+            [&](const expression::binary& id) { std::clog << "(binary " << int(id.op) << ")"; },
+            [&](const expression::call& call) { std::clog << "(call " << call.nargs << ")"; },
+        }, expr.expr);
+
+        std::clog << "\n" << std::endl;
     }
 
-    std::optional<object> stack_lookup(const std::string& name) {
-        auto iter = cur_func.stack_scope.find(name);
-        if (iter != end(cur_func.stack_scope)) {
-            return iter->second;
-        } else {
-            return std::nullopt;
+    stack_object get_return_object() {
+        return {{-1}, {type::integer{}}};
+    }
+
+    std::optional<stack_object> stack_lookup(const std::string& name) {
+        for (const auto& var : cur_func.local_stack) {
+            if (var.name == name) {
+                return var.obj;
+            }
         }
+        return std::nullopt;
     }
 
     std::optional<object> static_lookup(const std::string& name) {
@@ -167,17 +262,17 @@ struct script_context {
 
     int expr_id(const std::string& name, const location& loc) {
         if (auto idx = stack_lookup(name)) {
-            push_expr({expression::stack_id{std::get<addresses::local>(idx->address).addr}, idx->type, category::OBJECT});
+            push_expr({expression::stack_id{idx->addr.value}, idx->t, category::OBJECT});
         } else if (auto idx = static_lookup(name)) {
             std::visit(overload {
                 [&](const type::function& func) {
-                    push_expr({expression::function{std::get<addresses::global>(idx->address).addr}, type::closure{func}, category::EXPIRING});
+                    push_expr({expression::function{std::get<addresses::global>(idx->addr).value}, type::closure{func}, category::EXPIRING});
                 },
                 [&](const auto&) {
                     push_expr({expression::nothing{}, type::nothing{}, category::OBJECT});
                     messages.emplace_back("Static name is not a function: " + name, loc);
                 }
-            }, idx->type.t);
+            }, idx->t.t);
         } else {
             push_expr({expression::nothing{}, type::nothing{}, category::OBJECT});
             messages.emplace_back("Could not find name: " + name, loc);
@@ -199,6 +294,9 @@ struct script_context {
             [&](type::integer) {
                 if (std::holds_alternative<type::integer>(rhs.type.t)) {
                     push_expr({expression::binary{op}, type::integer{}, category::EXPIRING});
+                } else {
+                    push_expr({expression::nothing{}, type::nothing{}, category::OBJECT});
+                    messages.emplace_back("Type mismatch", loc);
                 }
             },
             [&](auto&&) {
@@ -243,26 +341,16 @@ struct script_context {
         const auto& funcexpr = *(rbegin(cur_func.active_exprs) + expr_size);
         expr_size += get_expr_size(expr_size);
         std::visit(overload {
-            [&](const type::function& func) {
-                push_expr({expression::call{nargs}, func.ret_type.get(), category::EXPIRING});
+            [&](const type::closure& func) {
+                push_expr({expression::call{nargs}, func.base.ret_type.get(), category::EXPIRING});
             },
             [&](const auto&) {
                 cur_func.active_exprs.resize(cur_func.active_exprs.size() - expr_size);
                 push_expr({expression::nothing{}, type::nothing{}, category::OBJECT});
-                messages.emplace_back("Called object is not a function", loc);
+                messages.emplace_back("Called object is not callable", loc);
             }
         }, funcexpr.type.t);
         return expr_size + 1;
-    }
-
-    int push(const type& t) {
-        int addr = cur_func.stack_top;
-        cur_func.stack_top += value_size(t);
-        return addr;
-    }
-
-    void pop(const type& t) {
-        cur_func.stack_top -= value_size(t);
     }
 
     void emit(const bc_entity& bc) {
@@ -270,16 +358,18 @@ struct script_context {
     }
 
     void emit_return(const location& loc) {
+        std::clog << "\n{return}\n" << std::endl;
+
         if (!cur_func.active_exprs.empty()) {
             auto type = cur_func.active_exprs.back().type;
             auto result = eval_expr(0, loc);
             clear_expr();
             std::visit(overload {
                 [&](const addresses::local& a) {
-                    emit_copy(type, -1, a.addr);
+                    emit_copy(get_return_object(), result);
                 },
                 [](const addresses::global& a) { throw std::runtime_error("Not implemented."); }
-            }, result.address);
+            }, result.addr);
         }
         emit(instruction{opcode::RET});
     }
@@ -293,106 +383,100 @@ struct script_context {
         auto dest = cur_func.stack_top;
         auto result = eval_expr(0, loc);
         clear_expr();
-        auto addr = std::visit(overload {
-            [](const addresses::local& a) { return a.addr; },
-            [&](const addresses::global& a) -> int { 
+        std::visit(overload {
+            [&](const addresses::local& a) {
+                if (a.value == dest) {
+                    promote_local(name);
+                } else {
+                    auto local = add_local(name);
+                    emit_copy(local, result);
+                }
+            },
+            [&](const addresses::global& a) { 
                 throw std::runtime_error("Not implemented");
             }
-        }, result.address);
-        cur_func.stack_scope[name] = {addresses::local{dest}, type};
+        }, result.addr);
     }
 
-    struct eval_result {
-        address address;
-        std::function<void()> emit_cleanup;
-    };
-
-    void emit_copy(const type& t, int dest, int src) {
-        emit(instruction{opcode::CPY, std::int8_t(dest), std::int8_t(src), std::int8_t(value_size(t))});
+    void emit_copy(const object& dest, const object& src) {
+        auto dest_addr = std::get<addresses::local>(dest.addr).value;
+        auto src_addr = std::get<addresses::local>(src.addr).value;
+        emit(instruction{opcode::CPY, std::int8_t(dest_addr), std::int8_t(src_addr), std::int8_t(value_size(dest.t))});
     }
 
-    std::function<void()> push_func_args(int expr_loc, int nargs, const location& loc) {
+    void push_func_args(int expr_loc, int nargs, const location& loc) {
         if (nargs > 0) {
             auto expr_size = get_expr_size(expr_loc);
-            auto cleanup_rest = push_func_args(expr_loc + expr_size, nargs - 1, loc);
-            auto cleanup_self = push_func_args(expr_loc, 0, loc);
-            return [cleanup_self = std::move(cleanup_self), cleanup_rest = std::move(cleanup_rest)]{
-                cleanup_self();
-                cleanup_rest();
-            };
+            push_func_args(expr_loc + expr_size, nargs - 1, loc);
+            push_func_args(expr_loc, 0, loc);
+            return;
         }
 
         auto dest = cur_func.stack_top;
         const auto& expr = *(rbegin(cur_func.active_exprs) + expr_loc);
         auto type = expr.type;
         auto result = eval_expr(expr_loc, loc);
-        auto cleanup = std::function<void()>{};
+
         std::visit(overload {
             [&](const addresses::local& a) {
-                if (a.addr != dest) {
-                    dest = push(type);
-                    emit_copy(type, dest, a.addr);
-                    cleanup = [=]{ pop(type); };
-                } else {
-                    cleanup = std::move(result.emit_cleanup);
+                if (a.value != dest) {
+                    auto dest = push_object(type);
+                    emit_copy(dest, result);
                 }
             },
             [&](const addresses::global&) {
                 throw std::runtime_error("Not implemented");
             }
-        }, result.address);
-        return cleanup;
+        }, result.addr);
     }
 
-    eval_result eval_expr(int expr_loc, const location& loc) {
+    object eval_expr(int expr_loc, const location& loc) {
         const auto& expr = *(rbegin(cur_func.active_exprs) + expr_loc);
 
         auto result = std::visit(overload {
-            [&](const expression::nothing&) -> eval_result { return {addresses::local{0}}; },
-            [&](const expression::stack_id& id) -> eval_result { return {addresses::local{id.addr}}; },
-            [&](const expression::function& id) -> eval_result {
+            [&](const expression::nothing&) -> object { return {addresses::local{0}, {type::nothing{}}}; },
+            [&](const expression::stack_id& id) -> object { return {addresses::local{id.addr}, expr.type}; },
+            [&](const expression::function& id) -> object {
                 auto t = type{type::closure{expr.type}};
-                auto addr = push(t);
-                emit(instruction{opcode::SETADR, std::int8_t(addr), std::int16_t(id.addr)});
-                return {addresses::local{addr}, [=]{ pop(t); }};
+                auto func = push_object(t);
+                emit(instruction{opcode::SETADR, std::int8_t(func.addr.value), std::int16_t(id.addr)});
+                return func;
             },
-            [&](const expression::constant& id) -> eval_result {
+            [&](const expression::constant& id) -> object {
                 auto type = expr.type;
-                auto addr = push(type);
+                auto val = push_object(type);
                 std::visit(overload {
                     [&](const type::integer&) {
-                        emit(instruction{opcode::ISETC, std::int8_t(addr), std::int16_t(id.addr)});
+                        emit(instruction{opcode::ISETC, std::int8_t(val.addr.value), std::int16_t(id.addr)});
                     },
                     [&](const auto&) {
                         emit(instruction{opcode::TERMINATE, std::int8_t(terminate_reason::BAD_LITERAL_TYPE)});
                     }
                 }, type.t);
-                return {addresses::local{addr}, [=]{ pop(type); }};
+                return val;
             },
-            [&](const expression::binary& id) -> eval_result {
-                auto type = expr.type;
-                auto dest = cur_func.stack_top;
-                auto cleanup = std::function<void()>{};
+            [&](const expression::binary& id) -> object {
+                auto dest = stack_object{{cur_func.stack_top}, expr.type};
 
                 auto rhs_size = get_expr_size(expr_loc + 1);
                 auto lhs_result = eval_expr(expr_loc + 1 + rhs_size, loc);
                 auto lhs_addr = std::visit(overload {
-                    [](const addresses::local& a) { return a.addr; },
+                    [](const addresses::local& a) { return a.value; },
                     [](const addresses::global& a) -> int { throw std::runtime_error("Not implemented."); }
-                }, lhs_result.address);
+                }, lhs_result.addr);
+                messages.emplace_back(compile_message::WARNING, "horse", loc);
 
-                if (lhs_addr != dest) {
-                    dest = push(type);
-                    cleanup = [=]{ pop(type); };
-                } else {
-                    cleanup = std::move(lhs_result.emit_cleanup);
+                if (lhs_addr != dest.addr.value) {
+                    dest = push_object(dest.t);
                 }
+
+                auto unwind_loc = cur_func.expr_stack.size();
 
                 auto rhs_result = eval_expr(expr_loc + 1, loc);
                 auto rhs_addr = std::visit(overload {
-                    [](const addresses::local& a) { return a.addr; },
+                    [](const addresses::local& a) { return a.value; },
                     [](const addresses::global& a) -> int { throw std::runtime_error("Not implemented."); }
-                }, rhs_result.address);
+                }, rhs_result.addr);
 
                 std::visit(overload {
                     [&](const type::integer&) {
@@ -402,38 +486,32 @@ struct script_context {
                                 case binop::SUB: return opcode::ISUB;
                                 case binop::MUL: return opcode::IMUL;
                                 case binop::DIV: return opcode::IDIV;
-                                default: return opcode::TERMINATE;
+                                default: throw std::runtime_error("Invalid binop");
                             }
                         }();
-                        emit(instruction{op, std::int8_t(dest), std::int8_t(lhs_addr), std::int8_t(rhs_addr)});
+                        emit(instruction{op, std::int8_t(dest.addr.value), std::int8_t(lhs_addr), std::int8_t(rhs_addr)});
                     },
                     [&](const auto&) {
                         emit(instruction{opcode::TERMINATE, std::int8_t(terminate_reason::BAD_ARITHMETIC_TYPE)});
                         messages.emplace_back("Bad arithmetic type", loc);
                     }
-                }, type.t);
+                }, dest.t.t);
 
-                if (rhs_result.emit_cleanup) {
-                    rhs_result.emit_cleanup();
-                }
+                pop_objects_until(unwind_loc);
 
-                if (lhs_result.emit_cleanup) {
-                    lhs_result.emit_cleanup();
-                }
-
-                return {addresses::local{dest}, std::move(cleanup)};
+                return dest;
             },
-            [&](const expression::call& call) -> eval_result {
-                auto type = expr.type;
-                auto dest = push(type);
-                auto cleanup = push_func_args(expr_loc + 1, call.nargs, loc);
+            [&](const expression::call& call) -> object {
+                auto return_type = expr.type;
+                auto dest = push_object(return_type);
                 auto top = cur_func.stack_top;
+                push_func_args(expr_loc + 1, call.nargs, loc);
 
-                emit(instruction{opcode::CALL, std::int8_t(top), std::int8_t(dest), 0});
+                const auto& target = cur_func.expr_stack.back();
 
-                cleanup();
+                emit(instruction{opcode::CALL, std::int8_t(top), std::int8_t(target.addr.value), 0});
 
-                return {addresses::local{dest}, [=]{ pop(type); }};
+                return dest;
             },
         }, expr.expr);
 

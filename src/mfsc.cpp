@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) try {
     auto source = ss.str();
 
     auto context = moonflower_script::script_context{};
-    context.emit(moonflower::instruction{moonflower::TERMINATE});
+    context.program.push_back(moonflower::instruction{moonflower::TERMINATE});
 
     auto lexer = moonflower_script::lexer{source};
     auto parser = moonflower_script::parser{lexer, context};

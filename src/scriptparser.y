@@ -57,9 +57,12 @@
 chunk: topblock EOF;
 
 topblock: %empty
-        | topstatement
-        | topblock topstatement
+        | topstatseq
         ;
+
+topstatseq: topstatement
+          | topstatseq topstatement
+          ;
 
 topstatement: funcdecl
             ;
@@ -79,9 +82,13 @@ paramseq: paramdecl
 paramdecl: IDENTIFIER[id] ':' type { context.add_param($id); };
 
 block: %empty
-     | block statement
+     | statseq
      | block retstat
      ;
+
+statseq: statement
+       | statseq statement
+       ;
 
 retstat: RETURN { context.emit_return(@$); }
        | RETURN expr { context.emit_return(@$); }
