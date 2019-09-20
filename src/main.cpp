@@ -8,8 +8,8 @@
 #include <vector>
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "usage: moonflower <bytecode_file>" << std::endl;
+    if (argc < 2) {
+        std::cerr << "usage: moonflower <bytecode_file> [args...]" << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -49,6 +49,10 @@ int main(int argc, char* argv[]) {
     S.modules.push_back(std::move(M));
     S.stacksize = 8 * 1024 * 1024; // 64 MB stack
     S.stack = std::make_unique<moonflower::value[]>(S.stacksize);
+
+    for (int i = 0; i < argc-2; ++i) {
+        S.stack[3+i].i = std::stoi(argv[2+i]);
+    }
 
     auto ret = moonflower::interp(S, 0, entry_point, 1);
 

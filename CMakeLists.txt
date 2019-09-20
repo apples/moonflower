@@ -43,3 +43,6 @@ add_executable(mfsc
 set_target_properties(mfsc PROPERTIES CXX_STANDARD 17)
 target_include_directories(mfsc PUBLIC src ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(mfsc ${REFLEX_LIB})
+
+add_executable(mfdisass src/mfdisass.cpp)
+set_target_properties(mfdisass PROPERTIES CXX_STANDARD 17)

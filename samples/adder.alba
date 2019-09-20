@@ -6,3 +6,10 @@ func get42(): int {
 func add(x: int): int {
     return x + get42()
 }
+
+func main(x: int, y: int): int {
+    var a = add(x)
+    var b = add(y)
+    var c = a + b - 84
+    return c
+}

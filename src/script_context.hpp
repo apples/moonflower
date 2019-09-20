@@ -121,6 +121,7 @@ struct script_context {
     std::vector<compile_message> messages;
     function_context cur_func;
     std::unordered_map<std::string, object> static_scope;
+    int main_entry = -1;
 
     int get_or_make_const_int(int val) {
         for (const auto& c : cur_func.constants) {
@@ -152,6 +153,10 @@ struct script_context {
         }
 
         auto entry = int(program.size());
+
+        if (cur_func.name == "main") {
+            main_entry = entry;
+        }
 
         static_scope[cur_func.name] = {addresses::global{entry}, {type::function{type{type::integer{}}, {}}}}; // TODO: function types
 
@@ -187,9 +192,12 @@ struct script_context {
         cur_func.expr_stack.pop_back();
     }
 
-    auto push_object(const type& t) -> const stack_object& {
+    auto push_object(const type& t, const location& loc) -> const stack_object& {
         cur_func.expr_stack.push_back({addresses::local{cur_func.stack_top}, t});
         cur_func.stack_top += value_size(t);
+        if (cur_func.stack_top > 127) {
+            messages.emplace_back("Stack overflow", loc);
+        }
         return cur_func.expr_stack.back();
     }
 
@@ -205,9 +213,11 @@ struct script_context {
         cur_func.expr_stack.pop_back();
     }
 
-    void pop_objects_until(int pos) {
+    void pop_objects_until(int pos, bool skip_destroy = false) {
         while (cur_func.expr_stack.size() > pos) {
-            emit_destroy(cur_func.expr_stack.back());
+            if (!skip_destroy) {
+                emit_destroy(cur_func.expr_stack.back());
+            }
             cur_func.stack_top = cur_func.expr_stack.back().addr.value;
             cur_func.expr_stack.pop_back();
         }
@@ -222,7 +232,7 @@ struct script_context {
     }
 
     stack_object get_return_object() {
-        return {{-1}, {type::integer{}}};
+        return {{-3}, {type::integer{}}};
     }
 
     std::optional<stack_object> stack_lookup(const std::string& name) {
@@ -385,30 +395,33 @@ struct script_context {
         emit(instruction{opcode::CPY, std::int8_t(dest_addr), std::int8_t(src_addr), std::int8_t(value_size(dest.t))});
     }
 
-    void push_func_args(int expr_loc, int nargs, const location& loc) {
+    auto push_func_args(int expr_loc, int nargs, const location& loc) -> int {
         if (nargs > 0) {
             auto expr_size = get_expr_size(expr_loc);
-            push_func_args(expr_loc + expr_size, nargs - 1, loc);
-            push_func_args(expr_loc, 0, loc);
-            return;
+            auto func_loc = push_func_args(expr_loc + expr_size, nargs - 1, loc);
+
+            auto dest = cur_func.stack_top;
+            const auto& expr = *(rbegin(cur_func.active_exprs) + expr_loc);
+            auto type = expr.type;
+            auto result = eval_expr(expr_loc, loc);
+
+            std::visit(overload {
+                [&](const addresses::local& a) {
+                    if (a.value != dest) {
+                        auto dest = push_object(type, loc);
+                        emit_copy(dest, result);
+                    }
+                },
+                [&](const addresses::global&) {
+                    throw std::runtime_error("Not implemented");
+                },
+            },
+            result.addr);
+
+            return func_loc;
         }
 
-        auto dest = cur_func.stack_top;
-        const auto& expr = *(rbegin(cur_func.active_exprs) + expr_loc);
-        auto type = expr.type;
-        auto result = eval_expr(expr_loc, loc);
-
-        std::visit(overload {
-            [&](const addresses::local& a) {
-                if (a.value != dest) {
-                    auto dest = push_object(type);
-                    emit_copy(dest, result);
-                }
-            },
-            [&](const addresses::global&) {
-                throw std::runtime_error("Not implemented");
-            }
-        }, result.addr);
+        return expr_loc;
     }
 
     object eval_expr(int expr_loc, const location& loc) {
@@ -419,13 +432,13 @@ struct script_context {
             [&](const expression::stack_id& id) -> object { return {addresses::local{id.addr}, expr.type}; },
             [&](const expression::function& id) -> object {
                 auto t = type{type::closure{expr.type}};
-                auto func = push_object(t);
+                auto func = push_object(t, loc);
                 emit(instruction{opcode::SETADR, std::int8_t(func.addr.value), std::int16_t(id.addr)});
                 return func;
             },
             [&](const expression::constant& id) -> object {
                 auto type = expr.type;
-                auto val = push_object(type);
+                auto val = push_object(type, loc);
                 std::visit(overload {
                     [&](const type::integer&) {
                         emit(instruction{opcode::ISETC, std::int8_t(val.addr.value), std::int16_t(id.addr)});
@@ -445,10 +458,9 @@ struct script_context {
                     [](const addresses::local& a) { return a.value; },
                     [](const addresses::global& a) -> int { throw std::runtime_error("Not implemented."); }
                 }, lhs_result.addr);
-                messages.emplace_back(compile_message::WARNING, "horse", loc);
 
                 if (lhs_addr != dest.addr.value) {
-                    dest = push_object(dest.t);
+                    dest = push_object(dest.t, loc);
                 }
 
                 auto unwind_loc = cur_func.expr_stack.size();
@@ -484,13 +496,25 @@ struct script_context {
             },
             [&](const expression::call& call) -> object {
                 auto return_type = expr.type;
-                auto dest = push_object(return_type);
-                auto top = cur_func.stack_top;
-                push_func_args(expr_loc + 1, call.nargs, loc);
+                auto dest = push_object(return_type, loc);
+                auto unwind_loc = cur_func.expr_stack.size();
+                auto new_stack = cur_func.stack_top;
+                push_object({type::integer{}}, loc); // return address
+                push_object({type::integer{}}, loc); // return stck
+                auto func_loc = push_func_args(expr_loc + 1, call.nargs, loc);
 
-                const auto& target = cur_func.expr_stack.back();
+                auto func_obj = eval_expr(func_loc, loc);
 
-                emit(instruction{opcode::CALL, std::int8_t(top), std::int8_t(target.addr.value), 0});
+                auto target = std::visit(overload {
+                    [&](const addresses::local& a) -> int { return a.value; },
+                    [&](const addresses::global&) -> int {
+                        throw std::runtime_error("Not implemented");
+                    },
+                }, func_obj.addr);
+
+                emit(instruction{opcode::CALL, std::int8_t(new_stack), std::int8_t(target), 0});
+
+                pop_objects_until(unwind_loc, true);
 
                 return dest;
             },

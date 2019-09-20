@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) try {
     auto lexer = moonflower_script::lexer{source};
     auto parser = moonflower_script::parser{lexer, context};
 
-    parser.set_debug_level(1);
+    //parser.set_debug_level(1);
 
     bool success = parser.parse() == 0;
     
@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) try {
         }
         const auto data = reinterpret_cast<const char*>(context.program.data());
         const int size = context.program.size();
-        const int entry_point = 0;
+        const int entry_point = context.main_entry;
 
         ofile.write(reinterpret_cast<const char*>(&entry_point), 4);
         ofile.write(reinterpret_cast<const char*>(&size), 4);

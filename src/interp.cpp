@@ -52,13 +52,13 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 stack[I.A].i = stack[I.BC.B].i + stack[I.BC.C].i;
                 break;
             case ISUB:
-                stack[I.A].i = stack[I.BC.B].i * stack[I.BC.C].i;
+                stack[I.A].i = stack[I.BC.B].i - stack[I.BC.C].i;
                 break;
             case IMUL:
-                stack[I.A].i = stack[I.BC.B].i / stack[I.BC.C].i;
+                stack[I.A].i = stack[I.BC.B].i * stack[I.BC.C].i;
                 break;
             case IDIV:
-                stack[I.A].i = stack[I.BC.B].i - stack[I.BC.C].i;
+                stack[I.A].i = stack[I.BC.B].i / stack[I.BC.C].i;
                 break;
 
             // float ops
@@ -66,13 +66,13 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 stack[I.A].f = stack[I.BC.B].f + stack[I.BC.C].f;
                 break;
             case FSUB:
-                stack[I.A].f = stack[I.BC.B].f * stack[I.BC.C].f;
+                stack[I.A].f = stack[I.BC.B].f - stack[I.BC.C].f;
                 break;
             case FMUL:
-                stack[I.A].f = stack[I.BC.B].f / stack[I.BC.C].f;
+                stack[I.A].f = stack[I.BC.B].f * stack[I.BC.C].f;
                 break;
             case FDIV:
-                stack[I.A].f = stack[I.BC.B].f - stack[I.BC.C].f;
+                stack[I.A].f = stack[I.BC.B].f / stack[I.BC.C].f;
                 break;
             
             // control ops
@@ -94,7 +94,7 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 PC = text + addr.off;
-                stack -= stack[OFF_RET_STACK - OFF_RET_INC].stk.soff;
+                stack -= stack[OFF_RET_STACK - OFF_RET_INC].stk.soff + OFF_RET_INC;
                 break;
             }
 
