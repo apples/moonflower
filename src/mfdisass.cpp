@@ -1,6 +1,7 @@
 #include "types.hpp"
 
 #include <cstddef>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <fstream>
@@ -22,28 +23,38 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    constexpr auto cw = 7;
+
     auto write = [](const std::string& name) {
-        std::cout << std::setw(10) << name << std::setw(15) << "";
+        std::cout << std::setw(10) << name << std::setw(cw*3) << "";
     };
 
     auto write_A = [](const std::string& name, instruction i) {
-        std::cout << std::setw(10) << name << std::setw(5) << int(i.A) << std::setw(10) << "";
+        std::cout << std::setw(10) << name << std::setw(cw) << i.A << std::setw(cw*2) << "";
     };
 
     auto write_AB = [](const std::string& name, instruction i) {
-        std::cout << std::setw(10) << name << std::setw(5) << int(i.A) << std::setw(5) << int(i.BC.B) << std::setw(5) << "";
+        std::cout << std::setw(10) << name << std::setw(cw) << i.A << std::setw(cw) << i.BC.B << std::setw(cw) << "";
     };
 
     auto write_ABC = [](const std::string& name, instruction i) {
-        std::cout << std::setw(10) << name << std::setw(5) << int(i.A) << std::setw(5) << int(i.BC.B) << std::setw(5) << int(i.BC.C);
+        std::cout << std::setw(10) << name << std::setw(cw) << i.A << std::setw(cw) << i.BC.B << std::setw(cw) << i.BC.C;
     };
 
-    auto write_D = [](const std::string& name, instruction i) {
-        std::cout << std::setw(10) << name << std::setw(5) << "" << std::setw(10) << int(i.D);
+    auto write_DI = [](const std::string& name, instruction i) {
+        std::cout << std::setw(10) << name << std::setw(cw) << "" << std::setw(cw*2) << i.DI;
     };
 
-    auto write_AD = [](const std::string& name, instruction i) {
-        std::cout << std::setw(10) << name << std::setw(5) << int(i.A) << std::setw(10) << int(i.D);
+    auto write_DF = [](const std::string& name, instruction i) {
+        std::cout << std::setw(10) << name << std::setw(cw) << "" << std::setw(cw*2) << i.DF;
+    };
+
+    auto write_ADI = [](const std::string& name, instruction i) {
+        std::cout << std::setw(10) << name << std::setw(cw) << i.A << std::setw(cw*2) << i.DI;
+    };
+
+    auto write_ADF = [](const std::string& name, instruction i) {
+        std::cout << std::setw(10) << name << std::setw(cw) << i.A << std::setw(cw*2) << i.DF;
     };
 
     int entry_point;
@@ -56,31 +67,43 @@ int main(int argc, char* argv[]) {
         if (i == entry_point) {
             std::cout << "__MAIN__:\n";
         }
-        bc_entity ent;
-        file.read(reinterpret_cast<char*>(&ent), sizeof(bc_entity));
+        instruction instr;
+        file.read(reinterpret_cast<char*>(&instr), sizeof(instruction));
 
         std::cout << std::setw(5) << i << ": ";
 
-        switch (ent.instr.OP) {
-            case opcode::TERMINATE: write_A("terminate", ent.instr); break;
-            case opcode::ISETC: write_AD("isetc", ent.instr); break;
-            case opcode::FSETC: write_AD("fsetc", ent.instr); break;
-            case opcode::SETADR: write_AD("setadr", ent.instr); break;
-            case opcode::CPY: write_ABC("cpy", ent.instr); break;
-            case opcode::IADD: write_ABC("iadd", ent.instr); break;
-            case opcode::ISUB: write_ABC("isub", ent.instr); break;
-            case opcode::IMUL: write_ABC("imul", ent.instr); break;
-            case opcode::IDIV: write_ABC("idiv", ent.instr); break;
-            case opcode::FADD: write_ABC("fadd", ent.instr); break;
-            case opcode::FSUB: write_ABC("fsub", ent.instr); break;
-            case opcode::FMUL: write_ABC("fmul", ent.instr); break;
-            case opcode::FDIV: write_ABC("fdiv", ent.instr); break;
-            case opcode::JMP: write_A("jmp", ent.instr); break;
-            case opcode::CALL: write_AB("call", ent.instr); break;
+        switch (instr.OP) {
+            case opcode::TERMINATE: write_A("terminate", instr); break;
+            case opcode::ISETC: write_ADI("isetc", instr); break;
+            case opcode::FSETC: write_ADF("fsetc", instr); break;
+            case opcode::SETADR: write_ADI("setadr", instr); break;
+            case opcode::CPY: write_ABC("cpy", instr); break;
+            case opcode::IADD: write_ABC("iadd", instr); break;
+            case opcode::ISUB: write_ABC("isub", instr); break;
+            case opcode::IMUL: write_ABC("imul", instr); break;
+            case opcode::IDIV: write_ABC("idiv", instr); break;
+            case opcode::FADD: write_ABC("fadd", instr); break;
+            case opcode::FSUB: write_ABC("fsub", instr); break;
+            case opcode::FMUL: write_ABC("fmul", instr); break;
+            case opcode::FDIV: write_ABC("fdiv", instr); break;
+            case opcode::JMP: write_A("jmp", instr); break;
+            case opcode::CALL: write_AB("call", instr); break;
             case opcode::RET: write("ret"); break;
             default: write("???"); break;
         }
 
-        std::cout << "  |  " << std::setw(11) << ent.val.i << "\n";
+        std::byte bytes[8];
+        std::memcpy(bytes, &instr, 8);
+
+        std::cout << "  |  ";
+
+        std::cout << std::setfill('0') << std::hex;
+        for (auto i = 0; i < 7; ++i) {
+            std::cout << std::setw(2) << std::to_integer<int>(bytes[i]) << " ";
+        }
+        std::cout << std::setw(2) << std::to_integer<int>(bytes[7]);
+        std::cout << std::setfill(' ') << std::dec;
+
+        std::cout << std::endl;
     }
 }

@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
 
     M.text.resize(textsize);
 
-    file.read(reinterpret_cast<char*>(M.text.data()), textsize * sizeof(moonflower::bc_entity));
+    file.read(reinterpret_cast<char*>(M.text.data()), textsize * sizeof(moonflower::instruction));
 
     moonflower::symbol exp;
 

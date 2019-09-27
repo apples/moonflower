@@ -30,6 +30,21 @@
     #define yylex lexer.lex
 
     using namespace moonflower;
+
+    template <typename T>
+    struct downcast_r {
+        T val;
+        bool overflow;
+    };
+
+    template <typename T>
+    auto downcast(int i) -> downcast_r<T> {
+        using limits = std::numeric_limits<T>;
+        auto r = downcast_r<T>{};
+        r.val = static_cast<T>(i);
+        r.overflow = (i > limits::max() || i < limits::min());
+        return r;
+    }
 }
 
 %define api.token.prefix {TK_}
@@ -48,6 +63,8 @@
 
 %token EOF 0
 
+%type <std::int16_t> int16
+
 %start chunk
 
 %%
@@ -62,26 +79,27 @@ stat: ID[id] ':' { context.add_label($id, @$); }
     | M_EXPORT ID[name] { context.add_export($name, @$); }
     | M_IMPORT ID[modname] { context.begin_import($modname); } '(' imports ')' { context.end_import(@$); }
 
-    | D_ICONST INT[i] { context.emit(value($i)); }
-    | D_FCONST FLOAT[f] { context.emit(value($f)); }
+    | TERMINATE int16[a] { context.emit({TERMINATE, $a}); }
 
-    | TERMINATE INT[a] { context.emit(instruction(TERMINATE, $a)); }
+    | ISETC int16[a] INT[d] { context.emit({ISETC, $a, $d}); }
 
-    | ISETC INT[a] INT[d] { context.emit(instruction(ISETC, $a, $d)); }
-    | ISETC INT[a] ID[id] {
-        auto addr = context.get_label($id);
-        if (addr == -1) context.await_label($id);
-        context.emit(instruction(ISETC, $a, addr));
-    }
+    | IADD int16[a] int16[b] int16[c] { context.emit({IADD, $a, {$b, $c}}); }
 
-    | IADD INT[a] INT[b] INT[c] { context.emit(instruction(IADD, $a, $b, $c)); }
-
-    | RET { context.emit(instruction(RET)); }
+    | RET { context.emit(instruction{RET}); }
     ;
 
 imports: ID[name] { context.import($name); }
        | imports ID[name] { context.import($name); }
        ;
+
+int16: INT[i] {
+         auto [result, overflow] = downcast<std::int16_t>($i);
+         if (overflow) {
+             context.messages.emplace_back("Integer overflow", @$);
+         }
+         $$ = result;
+     }
+     ;
 
 %%
 

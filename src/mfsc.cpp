@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) try {
 
         ofile.write(reinterpret_cast<const char*>(&entry_point), 4);
         ofile.write(reinterpret_cast<const char*>(&size), 4);
-        ofile.write(data, size * sizeof(moonflower::bc_entity));
+        ofile.write(data, size * sizeof(moonflower::instruction));
 
         /*
         for (const auto& exp : tu.m.exports) {

@@ -25,11 +25,11 @@ enum class category : uint8_t {
 
 namespace addresses {
     struct local {
-        int value;
+        std::int16_t value;
     };
 
     struct global {
-        int value;
+        std::int16_t value;
     };
 
     using address = std::variant<local, global>;
@@ -70,15 +70,15 @@ struct expression {
     struct nothing {};
 
     struct stack_id {
-        int addr;
+        std::int16_t addr;
     };
 
     struct function {
-        int addr;
+        std::int16_t addr;
     };
 
     struct constant {
-        int addr;
+        int val;
     };
 
     struct binary {
@@ -104,55 +104,29 @@ struct variable {
 
 struct function_context {
     std::string name;
-    std::vector<bc_entity> text;
-    std::vector<constant> constants;
-    int next_constant = 0;
+    std::vector<instruction> text;
     std::vector<expression> active_exprs;
     std::vector<variable> local_stack;
     std::vector<stack_object> expr_stack;
-    int stack_top = 0;
+    std::int16_t stack_top = 0;
 
     function_context() = default;
     function_context(std::string name) : name(std::move(name)) {}
 };
 
 struct script_context {
-    std::vector<bc_entity> program;
+    std::vector<instruction> program;
     std::vector<compile_message> messages;
     function_context cur_func;
     std::unordered_map<std::string, object> static_scope;
     int main_entry = -1;
-
-    int get_or_make_const_int(int val) {
-        for (const auto& c : cur_func.constants) {
-            if (std::holds_alternative<type::integer>(c.type.t) && c.val.i == val) {
-                return c.loc;
-            }
-        }
-
-        constant c;
-        c.loc = cur_func.next_constant;
-        c.type = {type::integer{}};
-        c.val.i = val;
-
-        cur_func.constants.push_back(c);
-        cur_func.next_constant += 1;
-        
-        return c.loc;
-    }
 
     void begin_func(const std::string& name) {
         cur_func = {name};
     }
 
     void end_func() {
-        auto const_offset = program.size();
-
-        for (const auto& c : cur_func.constants) {
-            program.push_back(value{c.val.i});
-        }
-
-        auto entry = int(program.size());
+        auto entry = std::int16_t(program.size());
 
         if (cur_func.name == "main") {
             main_entry = entry;
@@ -160,14 +134,9 @@ struct script_context {
 
         static_scope[cur_func.name] = {addresses::global{entry}, {type::function{type{type::integer{}}, {}}}}; // TODO: function types
 
-        for (const auto& bc : cur_func.text) {
-            auto result = bc;
-            switch (bc.instr.OP) {
-                case opcode::ISETC:
-                    result.instr.D = bc.instr.D + const_offset;
-                    break;
-            }
-            program.push_back(result);
+        for (const auto& instr : cur_func.text) {
+            // address fixups go here
+            program.push_back(instr);
         }
     }
 
@@ -275,7 +244,7 @@ struct script_context {
     }
 
     int expr_const_int(int val) {
-        push_expr({expression::constant{get_or_make_const_int(val)}, type::integer{}, category::EXPIRING});
+        push_expr({expression::constant{val}, type::integer{}, category::EXPIRING});
         return 1;
     }
 
@@ -346,8 +315,8 @@ struct script_context {
         return expr_size + 1;
     }
 
-    void emit(const bc_entity& bc) {
-        cur_func.text.push_back(bc);
+    void emit(const instruction& instr) {
+        cur_func.text.push_back(instr);
     }
 
     void emit_return(const location& loc) {
@@ -392,7 +361,7 @@ struct script_context {
     void emit_copy(const object& dest, const object& src) {
         auto dest_addr = std::get<addresses::local>(dest.addr).value;
         auto src_addr = std::get<addresses::local>(src.addr).value;
-        emit(instruction{opcode::CPY, std::int8_t(dest_addr), std::int8_t(src_addr), std::int8_t(value_size(dest.t))});
+        emit({opcode::CPY, dest_addr, {src_addr, value_size(dest.t)}});
     }
 
     auto push_func_args(int expr_loc, int nargs, const location& loc) -> int {
@@ -441,10 +410,10 @@ struct script_context {
                 auto val = push_object(type, loc);
                 std::visit(overload {
                     [&](const type::integer&) {
-                        emit(instruction{opcode::ISETC, std::int8_t(val.addr.value), std::int16_t(id.addr)});
+                        emit({opcode::ISETC, val.addr.value, id.val});
                     },
                     [&](const auto&) {
-                        emit(instruction{opcode::TERMINATE, std::int8_t(terminate_reason::BAD_LITERAL_TYPE)});
+                        emit({opcode::TERMINATE, std::int8_t(terminate_reason::BAD_LITERAL_TYPE)});
                     }
                 }, type.t);
                 return val;
@@ -456,7 +425,7 @@ struct script_context {
                 auto lhs_result = eval_expr(expr_loc + 1 + rhs_size, loc);
                 auto lhs_addr = std::visit(overload {
                     [](const addresses::local& a) { return a.value; },
-                    [](const addresses::global& a) -> int { throw std::runtime_error("Not implemented."); }
+                    [](const addresses::global& a) -> std::int16_t { throw std::runtime_error("Not implemented."); }
                 }, lhs_result.addr);
 
                 if (lhs_addr != dest.addr.value) {
@@ -468,7 +437,7 @@ struct script_context {
                 auto rhs_result = eval_expr(expr_loc + 1, loc);
                 auto rhs_addr = std::visit(overload {
                     [](const addresses::local& a) { return a.value; },
-                    [](const addresses::global& a) -> int { throw std::runtime_error("Not implemented."); }
+                    [](const addresses::global& a) -> std::int16_t { throw std::runtime_error("Not implemented."); }
                 }, rhs_result.addr);
 
                 std::visit(overload {
@@ -482,10 +451,10 @@ struct script_context {
                                 default: throw std::runtime_error("Invalid binop");
                             }
                         }();
-                        emit(instruction{op, std::int8_t(dest.addr.value), std::int8_t(lhs_addr), std::int8_t(rhs_addr)});
+                        emit({op, dest.addr.value, {lhs_addr, rhs_addr}});
                     },
                     [&](const auto&) {
-                        emit(instruction{opcode::TERMINATE, std::int8_t(terminate_reason::BAD_ARITHMETIC_TYPE)});
+                        emit({opcode::TERMINATE, int(terminate_reason::BAD_ARITHMETIC_TYPE)});
                         messages.emplace_back("Bad arithmetic type", loc);
                     }
                 }, dest.t.t);
@@ -506,13 +475,13 @@ struct script_context {
                 auto func_obj = eval_expr(func_loc, loc);
 
                 auto target = std::visit(overload {
-                    [&](const addresses::local& a) -> int { return a.value; },
-                    [&](const addresses::global&) -> int {
+                    [&](const addresses::local& a) { return a.value; },
+                    [&](const addresses::global&) -> std::int16_t {
                         throw std::runtime_error("Not implemented");
                     },
                 }, func_obj.addr);
 
-                emit(instruction{opcode::CALL, std::int8_t(new_stack), std::int8_t(target), 0});
+                emit({opcode::CALL, new_stack, {target, 0}});
 
                 pop_objects_until(unwind_loc, true);
 

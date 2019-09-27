@@ -9,8 +9,8 @@ constexpr int OFF_RET_STACK = 1;
 constexpr int OFF_RET_INC = 2;
 
 int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
-    const bc_entity* text = S.modules[mod_idx].text.data();
-    const bc_entity* PC = text + func_addr;
+    const instruction* text = S.modules[mod_idx].text.data();
+    const instruction* PC = text + func_addr;
     value* stack = S.stack.get() + retc;
     instruction I;
 
@@ -18,10 +18,10 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     stack[OFF_RET_STACK].stk = {0};
     stack += OFF_RET_INC;
 
-    const auto decode = [&I, &PC]{ I = PC->instr; ++PC; };
+    const auto fetch = [&I, &PC]{ I = *PC; ++PC; };
 
     while (true) {
-        decode();
+        fetch();
 
         switch (I.OP) {
             case TERMINATE:
@@ -29,15 +29,15 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
             
             // constant loads
             case ISETC:
-                stack[I.A].i = text[I.D].val.i;
+                stack[I.A].i = I.DI;
                 break;
             case FSETC:
-                stack[I.A].f = text[I.D].val.f;
+                stack[I.A].f = I.DF;
                 break;
             
             // address load
             case SETADR:
-                stack[I.A].gaddr = {mod_idx, std::uint16_t(I.D)};
+                stack[I.A].gaddr = {mod_idx, std::uint16_t(I.DI)};
                 break;
             
             // copy
@@ -77,7 +77,7 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
             
             // control ops
             case JMP:
-                PC = text + I.D;
+                PC = text + I.DI;
                 break;
             case CALL: {
                 stack[I.A + OFF_RET_ADDR].gaddr = {mod_idx, std::uint16_t(PC - text)};

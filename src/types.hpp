@@ -56,7 +56,7 @@ struct type {
     std::variant<nothing, integer, function, closure> t;
 };
 
-inline int value_size(const type& t) {
+inline std::int16_t value_size(const type& t) {
     return std::visit(overload {
         [](const type::nothing&) { return 0; },
         [](const type::integer&) { return 1; },
@@ -66,18 +66,23 @@ inline int value_size(const type& t) {
 }
 
 struct alignas(std::int32_t) instruction {
+    struct BC_t { std::int16_t B, C; };
+
     opcode OP;
-    std::int8_t A;
+    std::uint8_t R;
+    std::int16_t A;
     union {
-        struct { std::int8_t B, C; } BC;
-        std::int16_t D;
+        BC_t BC;
+        std::int32_t DI;
+        float DF;
     };
 
     instruction() = default;
-    explicit instruction(opcode o) : OP(o), A(0), BC{0, 0} {}
-    instruction(opcode o, std::int8_t a) : OP(o), A(a), BC{0, 0} {}
-    instruction(opcode o, std::int8_t a, std::int8_t b, std::int8_t c) : OP(o), A(a), BC{b, c} {}
-    instruction(opcode o, std::int8_t a, std::int16_t d) : OP(o), A(a), D(d) {}
+    explicit instruction(opcode o) : OP(o), R(0), A(0), DI(0) {}
+    instruction(opcode o, std::int16_t a) : OP(o), R(0), A(a), DI(0) {}
+    instruction(opcode o, std::int16_t a, BC_t bc) : OP(o), R(0), A(a), BC(bc) {}
+    instruction(opcode o, std::int16_t a, std::int32_t di) : OP(o), R(0), A(a), DI(di) {}
+    instruction(opcode o, std::int16_t a, float df) : OP(o), R(0), A(a), DF(df) {}
 };
 
 struct global_addr {
@@ -90,7 +95,7 @@ struct stack_rep {
 };
 
 union alignas(std::int32_t) value {
-    std::int32_t i;
+    std::uint32_t i;
     float f;
     global_addr gaddr;
     stack_rep stk;
@@ -98,24 +103,12 @@ union alignas(std::int32_t) value {
     value() = default;
     explicit value(std::int32_t i) : i(i) {}
     explicit value(float f) : f(f) {}
-    explicit value(const global_addr& a) : gaddr(a) {}
-    explicit value(const stack_rep& s) : stk(s) {}
-};
-
-union bc_entity {
-    instruction instr;
-    value val;
-
-    bc_entity() = default;
-    bc_entity(const instruction& i) : instr(i) {}
-    bc_entity(const value& v) : val(v) {}
+    value(const global_addr& a) : gaddr(a) {}
+    value(const stack_rep& s) : stk(s) {}
 };
 
 static_assert(sizeof(value) == sizeof(std::int32_t));
-static_assert(sizeof(value) == sizeof(instruction));
-static_assert(alignof(value) == alignof(instruction));
-static_assert(sizeof(bc_entity) == sizeof(instruction));
-static_assert(alignof(bc_entity) == alignof(instruction));
+static_assert(sizeof(instruction) == sizeof(std::int64_t));
 
 struct symbol {
     std::string name;
@@ -128,7 +121,7 @@ struct import {
 };
 
 struct module {
-    std::vector<bc_entity> text;
+    std::vector<instruction> text;
     std::vector<symbol> exports;
     std::vector<import> imports;
 };

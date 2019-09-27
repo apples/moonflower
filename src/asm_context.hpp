@@ -12,7 +12,7 @@
 namespace moonflower {
 
 struct asm_context {
-    std::vector<bc_entity> program;
+    std::vector<instruction> program;
     std::unordered_map<std::string, int> constant_idxs;
     std::unordered_map<std::string, int> labels;
     std::unordered_map<std::string, std::vector<int>> label_todo;
@@ -42,8 +42,7 @@ struct asm_context {
 
         if (titer != end(label_todo)) {
             for (const auto& pc : titer->second) {
-                auto& instr = program[pc].instr;
-                instr.D = addr;
+                program[pc].DI = addr;
             }
 
             label_todo.erase(titer);
@@ -63,8 +62,8 @@ struct asm_context {
         label_todo[name].push_back(addr());
     }
 
-    void emit(const bc_entity& ent) {
-        program.push_back(ent);
+    void emit(const instruction& instr) {
+        program.push_back(instr);
     }
 
     void set_entry(const location& loc) {
