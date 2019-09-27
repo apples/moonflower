@@ -47,22 +47,22 @@ int main(int argc, char* argv[]) {
     moonflower::state S;
 
     S.modules.push_back(std::move(M));
-    S.stacksize = 8 * 1024 * 1024; // 64 MB stack
-    S.stack = std::make_unique<moonflower::value[]>(S.stacksize);
+    S.stacksize = 64 * 1024 * 1024; // 64 MB stack
+    S.stack = std::make_unique<std::byte[]>(S.stacksize);
 
     for (int i = 0; i < argc-2; ++i) {
-        S.stack[3+i].i = std::stoi(argv[2+i]);
+        *reinterpret_cast<int*>(&S.stack[12+i*4]) = std::stoi(argv[2+i]);
     }
 
-    auto ret = moonflower::interp(S, 0, entry_point, 1);
+    auto ret = moonflower::interp(S, 0, entry_point, sizeof(int));
 
     if (ret != 0) {
         std::cerr << "error: terminated: " << ret << std::endl;
         return EXIT_FAILURE;
     }
 
-    std::cout << "result (i) = " << S.stack[0].i << std::endl;
-    std::cout << "result (f) = " << S.stack[0].f << std::endl;
+    std::cout << "result (i) = " << *reinterpret_cast<int*>(&S.stack[0]) << std::endl;
+    std::cout << "result (f) = " << *reinterpret_cast<float*>(&S.stack[0]) << std::endl;
 
     return EXIT_SUCCESS;
 }

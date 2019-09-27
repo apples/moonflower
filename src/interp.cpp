@@ -5,17 +5,22 @@
 namespace moonflower {
 
 constexpr int OFF_RET_ADDR = 0;
-constexpr int OFF_RET_STACK = 1;
-constexpr int OFF_RET_INC = 2;
+constexpr int OFF_RET_STACK = 4;
+constexpr int OFF_RET_INC = 8;
+
+template <typename T>
+auto stack_cast(std::byte* stack, std::int16_t addr) -> T& {
+    return *reinterpret_cast<T*>(stack + addr);
+}
 
 int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     const instruction* text = S.modules[mod_idx].text.data();
     const instruction* PC = text + func_addr;
-    value* stack = S.stack.get() + retc;
+    std::byte* stack = S.stack.get() + retc;
     instruction I;
 
-    stack[OFF_RET_ADDR].gaddr = {0, 0};
-    stack[OFF_RET_STACK].stk = {0};
+    stack_cast<global_addr>(stack, OFF_RET_ADDR) = {0, 0};
+    stack_cast<stack_rep>(stack, OFF_RET_STACK) = {0};
     stack += OFF_RET_INC;
 
     const auto fetch = [&I, &PC]{ I = *PC; ++PC; };
@@ -29,15 +34,15 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
             
             // constant loads
             case ISETC:
-                stack[I.A].i = I.DI;
+                stack_cast<int>(stack, I.A) = I.DI;
                 break;
             case FSETC:
-                stack[I.A].f = I.DF;
+                stack_cast<float>(stack, I.A) = I.DF;
                 break;
             
             // address load
             case SETADR:
-                stack[I.A].gaddr = {mod_idx, std::uint16_t(I.DI)};
+                stack_cast<global_addr>(stack, I.A) = {mod_idx, std::uint16_t(I.DI)};
                 break;
             
             // copy
@@ -49,30 +54,30 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
 
             // integer ops
             case IADD:
-                stack[I.A].i = stack[I.BC.B].i + stack[I.BC.C].i;
+                stack_cast<int>(stack, I.A) = stack_cast<int>(stack, I.BC.B) + stack_cast<int>(stack, I.BC.C);
                 break;
             case ISUB:
-                stack[I.A].i = stack[I.BC.B].i - stack[I.BC.C].i;
+                stack_cast<int>(stack, I.A) = stack_cast<int>(stack, I.BC.B) - stack_cast<int>(stack, I.BC.C);
                 break;
             case IMUL:
-                stack[I.A].i = stack[I.BC.B].i * stack[I.BC.C].i;
+                stack_cast<int>(stack, I.A) = stack_cast<int>(stack, I.BC.B) * stack_cast<int>(stack, I.BC.C);
                 break;
             case IDIV:
-                stack[I.A].i = stack[I.BC.B].i / stack[I.BC.C].i;
+                stack_cast<int>(stack, I.A) = stack_cast<int>(stack, I.BC.B) / stack_cast<int>(stack, I.BC.C);
                 break;
 
             // float ops
             case FADD:
-                stack[I.A].f = stack[I.BC.B].f + stack[I.BC.C].f;
+                stack_cast<float>(stack, I.A) = stack_cast<float>(stack, I.BC.B) + stack_cast<float>(stack, I.BC.C);
                 break;
             case FSUB:
-                stack[I.A].f = stack[I.BC.B].f - stack[I.BC.C].f;
+                stack_cast<float>(stack, I.A) = stack_cast<float>(stack, I.BC.B) - stack_cast<float>(stack, I.BC.C);
                 break;
             case FMUL:
-                stack[I.A].f = stack[I.BC.B].f * stack[I.BC.C].f;
+                stack_cast<float>(stack, I.A) = stack_cast<float>(stack, I.BC.B) * stack_cast<float>(stack, I.BC.C);
                 break;
             case FDIV:
-                stack[I.A].f = stack[I.BC.B].f / stack[I.BC.C].f;
+                stack_cast<float>(stack, I.A) = stack_cast<float>(stack, I.BC.B) / stack_cast<float>(stack, I.BC.C);
                 break;
             
             // control ops
@@ -80,9 +85,9 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 PC = text + I.DI;
                 break;
             case CALL: {
-                stack[I.A + OFF_RET_ADDR].gaddr = {mod_idx, std::uint16_t(PC - text)};
-                stack[I.A + OFF_RET_STACK].stk.soff = I.A;
-                const auto& addr = stack[I.BC.B].gaddr;
+                stack_cast<global_addr>(stack, I.A + OFF_RET_ADDR) = {mod_idx, std::uint16_t(PC - text)};
+                stack_cast<stack_rep>(stack, I.A + OFF_RET_STACK).soff = I.A;
+                const auto& addr = stack_cast<global_addr>(stack, I.BC.B);
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 PC = text + addr.off;
@@ -90,11 +95,11 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
                 break;
             }
             case RET: {
-                const auto& addr = stack[OFF_RET_ADDR - OFF_RET_INC].gaddr;
+                const auto& addr = stack_cast<global_addr>(stack, OFF_RET_ADDR - OFF_RET_INC);
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 PC = text + addr.off;
-                stack -= stack[OFF_RET_STACK - OFF_RET_INC].stk.soff + OFF_RET_INC;
+                stack -= stack_cast<stack_rep>(stack, OFF_RET_STACK - OFF_RET_INC).soff + OFF_RET_INC;
                 break;
             }
 

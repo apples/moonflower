@@ -148,8 +148,9 @@ struct script_context {
         if (!cur_func.expr_stack.empty()) {
             throw std::runtime_error("Can't add local while expressions are on the stack");
         }
-        cur_func.local_stack.emplace_back(name, stack_object{{cur_func.stack_top}, {type::integer{}}});
-        ++cur_func.stack_top;
+        auto t = type{type::integer{}};
+        cur_func.local_stack.emplace_back(name, stack_object{{cur_func.stack_top}, t});
+        cur_func.stack_top += value_size(t);
         return cur_func.local_stack.back().obj;
     }
 
@@ -201,7 +202,9 @@ struct script_context {
     }
 
     stack_object get_return_object() {
-        return {{-3}, {type::integer{}}};
+        auto t = type{type::integer{}};
+        auto s = value_size(t);
+        return {{std::int16_t(-8 - s)}, t};
     }
 
     std::optional<stack_object> stack_lookup(const std::string& name) {
