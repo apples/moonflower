@@ -1,5 +1,6 @@
 
 #include "interp.hpp"
+#include "state.hpp"
 
 #include <cstddef>
 #include <iostream>
@@ -20,33 +21,18 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    int entry_point;
-    moonflower::module M;
-
-    int textsize;
-
-    file.read(reinterpret_cast<char*>(&entry_point), 4);
-    file.read(reinterpret_cast<char*>(&textsize), 4);
-
-    M.text.resize(textsize);
-
-    file.read(reinterpret_cast<char*>(M.text.data()), textsize * sizeof(moonflower::instruction));
-
-    moonflower::symbol exp;
-
-    file.read(reinterpret_cast<char*>(&exp.addr), 4);
-
-    while (exp.addr != -1) {
-        int nlen;
-        file.read(reinterpret_cast<char*>(&nlen), 4);
-        exp.name.resize(nlen);
-        file.read(exp.name.data(), nlen);
-        file.read(reinterpret_cast<char*>(&exp.addr), 4);
-    }
-
     moonflower::state S;
 
-    S.modules.push_back(std::move(M));
+    auto [mod_idx, messages] = S.load(file);
+
+    for (const auto& msg : messages) {
+        std::clog << msg << std::endl;
+    }
+
+    if (!mod_idx) {
+        return EXIT_FAILURE;
+    }
+
     S.stacksize = 64 * 1024 * 1024; // 64 MB stack
     S.stack = std::make_unique<std::byte[]>(S.stacksize);
 
@@ -54,7 +40,9 @@ int main(int argc, char* argv[]) {
         *reinterpret_cast<int*>(&S.stack[12+i*4]) = std::stoi(argv[2+i]);
     }
 
-    auto ret = moonflower::interp(S, 0, entry_point, sizeof(int));
+    auto entry_point = S.get_entry_point(*mod_idx);
+
+    auto ret = moonflower::interp(S, *mod_idx, entry_point, sizeof(int));
 
     if (ret != 0) {
         std::cerr << "error: terminated: " << ret << std::endl;

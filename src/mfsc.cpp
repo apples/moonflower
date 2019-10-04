@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) try {
 
     auto source = ss.str();
 
-    auto context = moonflower_script::script_context{};
+    auto context = moonflower::script_context{};
     context.program.push_back(moonflower::instruction{moonflower::TERMINATE});
 
     auto lexer = moonflower_script::lexer{source};
@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) try {
     //parser.set_debug_level(1);
 
     bool success = parser.parse() == 0;
-    
+
     for (const auto& msg : context.messages) {
         std::clog << msg << std::endl;
         if (msg.severity == moonflower::compile_message::ERROR) {

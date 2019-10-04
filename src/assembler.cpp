@@ -19,7 +19,7 @@ translation translate(const char* source, std::size_t len) {
     parser.set_debug_level(1);
 
     bool success = parser.parse() == 0;
-    
+
     module m;
     m.text = std::move(context.program);
     m.exports.reserve(context.exports.size());
@@ -41,8 +41,7 @@ translation translate(const char* source, std::size_t len) {
     return {
         success ? result::SUCCESS : result::FAIL,
         m,
-        std::move(context.messages),
-        context.entry_point
+        std::move(context.messages)
     };
 }
 

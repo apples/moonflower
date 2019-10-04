@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) try {
         const auto data = reinterpret_cast<const char*>(tu.m.text.data());
         const int size = tu.m.text.size();
 
-        ofile.write(reinterpret_cast<const char*>(&tu.entry_point), 4);
+        ofile.write(reinterpret_cast<const char*>(&tu.m.entry_point), 4);
         ofile.write(reinterpret_cast<const char*>(&size), 4);
         ofile.write(data, size * sizeof(moonflower::instruction));
 

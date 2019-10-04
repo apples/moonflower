@@ -16,10 +16,10 @@ struct asm_context {
     std::unordered_map<std::string, int> constant_idxs;
     std::unordered_map<std::string, int> labels;
     std::unordered_map<std::string, std::vector<int>> label_todo;
-    std::unordered_map<std::string, std::unordered_map<std::string, int>> imports;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::int16_t>> imports;
     std::unordered_map<std::string, int> cur_import;
     std::string cur_import_name;
-    std::unordered_map<std::string, int> exports;
+    std::unordered_map<std::string, std::int16_t> exports;
     std::vector<compile_message> messages;
     int entry_point = -1;
 

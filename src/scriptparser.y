@@ -19,10 +19,11 @@
 
     namespace moonflower_script {
         class lexer;
+        using location = moonflower::location;
     }
 }
 
-%parse-param {moonflower_script::lexer& lexer} {moonflower_script::script_context& context}
+%parse-param {moonflower_script::lexer& lexer} {moonflower::script_context& context}
 
 %code {
     #include "scriptlexer.hpp"
@@ -79,7 +80,7 @@ paramseq: paramdecl
         | paramseq ',' paramdecl
         ;
 
-paramdecl: IDENTIFIER[id] ':' type { context.add_param($id); };
+paramdecl: IDENTIFIER[id] ':' type { context.add_param($id, @$); };
 
 block: %empty
      | statseq
