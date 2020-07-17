@@ -8,6 +8,7 @@
 #include <optional>
 #include <unordered_map>
 #include <vector>
+#include <string>
 
 namespace moonflower {
 
@@ -22,7 +23,9 @@ public:
     std::size_t stacksize;
     std::vector<module> modules;
 
-    load_result load(std::istream& source_code);
+    std::int16_t load(module m);
+
+    load_result load(const std::string& name, std::istream& source_code);
 
     int execute(std::int16_t mod_idx, std::int16_t func_addr, int ret_size);
 

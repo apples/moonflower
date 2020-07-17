@@ -2,8 +2,12 @@
 
 #include "translation.hpp"
 
+#include <string>
+
 namespace moonflower {
 
-translation compile(std::istream& source);
+class state;
+
+translation compile(state& S, const std::string& name, std::istream& source);
 
 }

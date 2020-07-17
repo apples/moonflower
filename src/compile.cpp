@@ -6,8 +6,8 @@
 
 namespace moonflower {
 
-translation compile(std::istream& source) {
-    auto context = moonflower::script_context{};
+translation compile(state& S, const std::string& name, std::istream& source) {
+    auto context = moonflower::script_context{S};
     context.program.push_back(moonflower::instruction{moonflower::TERMINATE});
 
     auto& int_type = context.new_usertype("int");
@@ -65,6 +65,7 @@ translation compile(std::istream& source) {
     }
 
     module m;
+    m.name = name;
     m.text = std::move(context.program);
     m.entry_point = context.main_entry;
 

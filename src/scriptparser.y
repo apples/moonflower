@@ -58,8 +58,21 @@
 chunk: topblock EOF;
 
 topblock: %empty
+        | topheader
         | topstatseq
         ;
+
+topheader: import
+         | topheader import
+         ;
+
+import: IMPORT IDENTIFIER[id] '{' { context.begin_import($id); } importnames '}';
+
+importnames: importname
+           | importnames importname
+           ;
+
+importname: IDENTIFIER[name] { context.import($name); };
 
 topstatseq: topstatement
           | topstatseq topstatement

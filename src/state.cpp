@@ -5,8 +5,13 @@
 
 namespace moonflower {
 
-load_result state::load(std::istream& source_code) {
-    auto tu = compile(source_code);
+std::int16_t state::load(module m) {
+    modules.push_back(std::move(m));
+    return modules.size() - 1;
+}
+
+load_result state::load(const std::string& name, std::istream& source_code) {
+    auto tu = compile(*this, name, source_code);
 
     if (tu.r == result::SUCCESS) {
         modules.push_back(std::move(tu.m));

@@ -1,3 +1,6 @@
+import print {
+    print_i
+}
 
 func get42(): int {
     return 42
@@ -11,5 +14,6 @@ func main(x: int, y: int): int {
     var a = add(x)
     var b = add(y)
     var c = a + b - 84
+    print_i(c)
     return c
 }

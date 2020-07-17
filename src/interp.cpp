@@ -19,11 +19,20 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     std::byte* stack = S.stack.get() + retc;
     instruction I;
 
-    stack_cast<global_addr>(stack, OFF_RET_ADDR) = {0, 0};
+    stack_cast<program_addr>(stack, OFF_RET_ADDR) = {0, 0};
     stack_cast<stack_rep>(stack, OFF_RET_STACK) = {0};
     stack += OFF_RET_INC;
 
     const auto fetch = [&I, &PC]{ I = *PC; ++PC; };
+
+    const auto mf_func_call = [&S, &mod_idx, &text, &PC, &stack](std::int16_t stack_top, program_addr addr) {
+        stack_cast<program_addr>(stack, stack_top + OFF_RET_ADDR) = {mod_idx, std::uint16_t(PC - text)};
+        stack_cast<stack_rep>(stack, stack_top + OFF_RET_STACK).soff = stack_top;
+        mod_idx = addr.mod;
+        text = S.modules[mod_idx].text.data();
+        PC = text + addr.off;
+        stack += stack_top + OFF_RET_INC;
+    };
 
     while (true) {
         fetch();
@@ -31,7 +40,7 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
         switch (I.OP) {
             case TERMINATE:
                 return I.A;
-            
+
             // constant loads
             case ISETC:
                 stack_cast<int>(stack, I.A) = I.DI;
@@ -39,12 +48,12 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
             case FSETC:
                 stack_cast<float>(stack, I.A) = I.DF;
                 break;
-            
+
             // address load
             case SETADR:
-                stack_cast<global_addr>(stack, I.A) = {mod_idx, std::uint16_t(I.DI)};
+                stack_cast<program_addr>(stack, I.A) = {mod_idx, std::uint16_t(I.DI)};
                 break;
-            
+
             // copy
             case CPY:
                 for (int i = 0; i < I.BC.C; ++i) {
@@ -79,28 +88,57 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
             case FDIV:
                 stack_cast<float>(stack, I.A) = stack_cast<float>(stack, I.BC.B) / stack_cast<float>(stack, I.BC.C);
                 break;
-            
+
             // control ops
             case JMP:
                 PC = text + I.DI;
                 break;
             case CALL: {
-                stack_cast<global_addr>(stack, I.A + OFF_RET_ADDR) = {mod_idx, std::uint16_t(PC - text)};
-                stack_cast<stack_rep>(stack, I.A + OFF_RET_STACK).soff = I.A;
-                const auto& addr = stack_cast<global_addr>(stack, I.BC.B);
-                mod_idx = addr.mod;
-                text = S.modules[mod_idx].text.data();
-                PC = text + addr.off;
-                stack += I.A + OFF_RET_INC;
+                const auto& addr = stack_cast<program_addr>(stack, I.BC.B);
+                mf_func_call(I.A, addr);
                 break;
             }
             case RET: {
-                const auto& addr = stack_cast<global_addr>(stack, OFF_RET_ADDR - OFF_RET_INC);
+                const auto& addr = stack_cast<program_addr>(stack, OFF_RET_ADDR - OFF_RET_INC);
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 PC = text + addr.off;
                 stack -= stack_cast<stack_rep>(stack, OFF_RET_STACK - OFF_RET_INC).soff + OFF_RET_INC;
                 break;
+            }
+
+            // C function calls
+            case CFLOAD: {
+                auto& dest = stack_cast<cfunc*>(stack, I.A);
+                if constexpr (sizeof(cfunc*) == 4) {
+                    std::memcpy(&dest, &I.DI, 4);
+                } else if constexpr (sizeof(cfunc*) == 8) {
+                    std::memcpy(&dest, PC, 8);
+                    ++PC;
+                } else {
+                    static_assert("Invalid cfunc size");
+                }
+                break;
+            }
+            case CFCALL: {
+                const auto& func = stack_cast<cfunc*>(stack, I.A);
+                func(&S, stack + I.A);
+                break;
+            }
+
+            // polymorphic function call
+            case PFCALL: {
+                const auto& pfunc = stack_cast<polyfunc_rep>(stack, I.BC.B);
+                switch (pfunc.type) {
+                    case polyfunc_type::MOONFLOWER: {
+                        mf_func_call(I.A, pfunc.moonflower_func);
+                        break;
+                    }
+                    case polyfunc_type::C: {
+                        pfunc.c_func(&S, stack + I.A);
+                        break;
+                    }
+                }
             }
 
             // invalid ops

@@ -8,6 +8,34 @@
 #include <memory>
 #include <vector>
 
+void print_i(moonflower::state* s, std::byte* stk) {
+    std::cout << "print_i: " << (void*)s << ", " << (void*)stk << std::endl;
+}
+
+template <typename R, typename... Ts>
+void cfunc_to_mf(moonflower::module& m, const std::string& name, R(*func)(Ts...)) {
+    using namespace moonflower;
+
+    auto text_loc = static_cast<std::int16_t>(m.text.size());
+    auto data_loc = static_cast<std::int16_t>(m.data.size());
+    auto b = reinterpret_cast<const std::byte*>(&func);
+    auto e = b + sizeof(func);
+
+    m.data.insert(m.data.end(), b, e);
+    m.exports.push_back({name, text_loc});
+
+    m.text.push_back(instruction{opcode::SETDAT, 0, {data_loc, static_cast<std::int16_t>(sizeof(func))}});
+    m.text.push_back(instruction{opcode::CFCALL, 0});
+}
+
+
+void load_core(moonflower::state& S) {
+    using namespace moonflower;
+    module m;
+    cfunc_to_mf(m, "print_i", print_i);
+    S.load(m);
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "usage: moonflower <bytecode_file> [args...]" << std::endl;
@@ -22,6 +50,8 @@ int main(int argc, char* argv[]) {
     }
 
     moonflower::state S;
+
+    load_core(S);
 
     auto [mod_idx, messages] = S.load(file);
 

@@ -5,6 +5,7 @@
 #include "compile_message.hpp"
 #include "location.hpp"
 #include "utility.hpp"
+#include "state.hpp"
 
 #include <cassert>
 #include <charconv>
@@ -63,7 +64,11 @@ struct expression {
         int nargs;
     };
 
-    std::variant<nothing, stack_id, function, constant, binary, call> expr;
+    struct dataload {
+        std::int16_t addr;
+    };
+
+    std::variant<nothing, stack_id, function, constant, binary, call, dataload> expr;
     type_ptr type;
     category category;
 };
@@ -89,15 +94,18 @@ struct function_context {
 };
 
 struct script_context {
+    state* S;
     std::vector<instruction> program;
+    std::vector<std::byte> data;
     std::vector<compile_message> messages;
     function_context cur_func;
     std::unordered_map<std::string, object> static_scope;
     int main_entry = -1;
     std::unordered_map<std::string, type_ptr> global_types;
     type_ptr nulltype;
+    std::optional<std::int16_t> current_import_module;
 
-    script_context() {
+    script_context(state& S) : S(&S) {
         nulltype = std::make_shared<type>(type::nothing{});
     }
 
@@ -114,6 +122,34 @@ struct script_context {
         } else {
             messages.emplace_back("Type does not exist: " + name, location{});
             return nulltype;
+        }
+    }
+
+    void begin_import(const std::string& module_name) {
+        for (std::int16_t mi = 0; mi < S->modules.size(); ++mi) {
+            auto& m = S->modules[mi];
+            if (m.name == module_name) {
+                current_import_module = mi;
+                return;
+            }
+        }
+        current_import_module = std::nullopt;
+        messages.emplace_back("Module not loaded: " + module_name, location{});
+    }
+
+    void import(const std::string& func_name) {
+        if (current_import_module) {
+            auto& m = S->modules[*current_import_module];
+            for (const auto& e : m.exports) {
+                if (e.name == func_name) {
+                    auto adr = program_addr{
+                        *current_import_module,
+                        e.addr,
+                    };
+                    static_scope.push_back(object())
+                    data.insert(data.end(), &adr, &adr + sizeof(adr));
+                }
+            }
         }
     }
 
@@ -232,7 +268,14 @@ struct script_context {
         } else if (auto idx = static_lookup(name)) {
             std::visit(overload {
                 [&](const type::function& func) {
-                    push_expr({expression::function{std::get<addresses::global>(idx->addr).value}, std::make_shared<type>(type::closure{func}), category::EXPIRING});
+                    std::visit(overload{
+                        [&](const addresses::global& g){
+                            push_expr({expression::function{g.value}, std::make_shared<type>(type::function_ptr{func}), category::EXPIRING});
+                        },
+                        [&](const addresses::data& d){
+                            push_expr({expression::function{g.value}, std::make_shared<type>(type::function_ptr{func}), category::EXPIRING});
+                        },
+                    }, idx->addr);
                 },
                 [&](const auto&) {
                     push_expr({expression::nothing{}, make_type_ptr(type::nothing{}), category::OBJECT});
@@ -305,7 +348,8 @@ struct script_context {
                 }
                 size += get_expr_size(loc + 1 + size);
                 return size;
-            }
+            },
+            [&](const expression::dataload& dl) { return 0; },
         }, expr.expr);
     }
 
@@ -317,7 +361,7 @@ struct script_context {
         const auto& funcexpr = *(rbegin(cur_func.active_exprs) + expr_size);
         expr_size += get_expr_size(expr_size);
         std::visit(overload {
-            [&](const type::closure& func) {
+            [&](const type::function_ptr& func) {
                 push_expr({expression::call{nargs}, func.base.ret_type, category::EXPIRING});
             },
             [&](const auto&) {
@@ -414,7 +458,7 @@ struct script_context {
             [&](const expression::nothing&) -> object { return {addresses::local{0}, make_type_ptr(type::nothing{})}; },
             [&](const expression::stack_id& id) -> object { return {addresses::local{id.addr}, expr.type}; },
             [&](const expression::function& id) -> object {
-                auto t = make_type_ptr(type::closure{expr.type});
+                auto t = make_type_ptr(type::function_ptr{expr.type});
                 auto func = push_object(t, loc);
                 emit(instruction{opcode::SETADR, std::int8_t(func.addr.value), std::int16_t(id.addr)});
                 return func;
@@ -486,6 +530,12 @@ struct script_context {
                 pop_objects_until(unwind_loc, true);
 
                 return dest;
+            },
+            [&](const expression::dataload& dl) -> object {
+                auto type = expr.type;
+                auto val = push_object(type, loc);
+                emit({opcode::SETDAT, val.addr.value, {dl.addr, value_size(*type)}});
+                return val;
             },
         }, expr.expr);
 

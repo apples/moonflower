@@ -3,6 +3,7 @@
 #include "utility.hpp"
 
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -11,28 +12,36 @@
 
 namespace moonflower {
 
+class state;
+
 enum opcode : std::uint8_t {
-    TERMINATE,
+    TERMINATE, // A: return code)
 
-    ISETC,
-    FSETC,
-    SETADR,
+    ISETC, // A: dest, DI: value
+    FSETC, // A: dest, DF: value
+    SETADR, // A: dest, DI: text address value
+    SETDAT, // A: dest, B: data address, C: size
 
-    CPY,
+    CPY, // A: dest, B: source, C: count
 
-    IADD,
-    ISUB,
-    IMUL,
-    IDIV,
+    IADD, // A: dest, B: x, C: y
+    ISUB, // A: dest, B: x, C: y
+    IMUL, // A: dest, B: x, C: y
+    IDIV, // A: dest, B: x, C: y
 
-    FADD,
-    FSUB,
-    FMUL,
-    FDIV,
+    FADD, // A: dest, B: x, C: y
+    FSUB, // A: dest, B: x, C: y
+    FMUL, // A: dest, B: x, C: y
+    FDIV, // A: dest, B: x, C: y
 
-    JMP,
-    CALL,
-    RET,
+    JMP, // DI: text address to jump to
+    CALL, // A: stack top, B: stack addr of program_addr to call
+    RET, // no args
+
+    CFLOAD, // A: dest, B: cfunc id
+    CFCALL, // A: stack addr of cfunc
+
+    PFCALL, // A: stack top, B: stack addr of polyfunc_rep
 };
 
 enum class terminate_reason : std::int8_t {
@@ -73,7 +82,11 @@ namespace addresses {
         std::int16_t value;
     };
 
-    using address = std::variant<local, global>;
+    struct data {
+        std::int16_t value;
+    };
+
+    using address = std::variant<local, global, data>;
 }
 
 using addresses::address;
@@ -92,18 +105,18 @@ struct type {
         std::vector<type_ptr> params;
     };
 
-    struct closure {
+    struct function_ptr {
         function base;
     };
 
     struct usertype {
-        int size = 0;
+        std::size_t size = 0;
         std::unordered_map<std::string, field_def> fields;
         std::unordered_map<binop, std::vector<binop_def>> binops;
         std::function<void(std::int16_t from, std::int16_t to)> emit_copy;
     };
 
-    using variant = std::variant<nothing, function, closure, usertype>;
+    using variant = std::variant<nothing, function, function_ptr, usertype>;
 
     variant t;
 
@@ -116,12 +129,78 @@ struct type {
     type(variant v): t(std::move(v)) {}
 };
 
+struct alignas(std::int64_t) instruction {
+    struct BC_t { std::int16_t B, C; };
+
+    opcode OP;
+    std::uint8_t R;
+    std::int16_t A;
+    union {
+        BC_t BC;
+        std::int32_t DI;
+        float DF;
+    };
+
+    instruction() = default;
+    explicit instruction(std::array<std::byte, 8> b) { std::memcpy(this, b.data(), 8); }
+    explicit instruction(opcode o) : OP(o), R(0), A(0), DI(0) {}
+    instruction(opcode o, std::int16_t a) : OP(o), R(0), A(a), DI(0) {}
+    instruction(opcode o, std::int16_t a, BC_t bc) : OP(o), R(0), A(a), BC(bc) {}
+    instruction(opcode o, std::int16_t a, std::int32_t di) : OP(o), R(0), A(a), DI(di) {}
+    instruction(opcode o, std::int16_t a, float df) : OP(o), R(0), A(a), DF(df) {}
+};
+
+static_assert(sizeof(instruction) == sizeof(std::int64_t));
+
+struct program_addr {
+    std::uint16_t mod;
+    std::uint16_t off;
+};
+
+struct stack_rep {
+    std::uint16_t soff;
+};
+
+using cfunc = void(state* s, std::byte* stk);
+
+enum class polyfunc_type {
+    MOONFLOWER,
+    C,
+};
+
+struct polyfunc_rep {
+    polyfunc_type type;
+    union {
+        program_addr moonflower_func;
+        cfunc* c_func;
+    };
+};
+
+struct symbol {
+    std::string name;
+    std::int16_t addr;
+};
+
+struct import {
+    std::string modname;
+    std::vector<symbol> symbols;
+};
+
+struct module {
+    std::string name;
+    std::vector<instruction> text;
+    std::vector<std::byte> data;
+    std::vector<symbol> exports;
+    std::vector<import> imports;
+    std::uint16_t entry_point;
+};
+
 inline std::string to_string(const type& t) {
     using namespace std::literals;
     return std::visit(overload {
         [](const type::nothing&) { return "[nothing]"s; },
         [](const type::function&) { return "[function]"s; },
-        [](const type::closure&) { return "[closure]"s; },
+        [](const type::function_ptr&) { return "[function_ptr]"s; },
         [](const type::usertype&) { return "[usertype]"s; },
     }, t.t);
 }
@@ -155,7 +234,7 @@ inline bool operator==(const type& a, const type& b) {
     return std::visit(overload {
         [](const type::nothing&, const type::nothing&) { return true; },
         [](const type::function& a_f, const type::function& b_f) {return a_f == b_f; },
-        [](const type::closure& a_c, const type::closure& b_c) { return a_c.base == b_c.base; },
+        [](const type::function_ptr& a_c, const type::function_ptr& b_c) { return a_c.base == b_c.base; },
         [](const type::usertype& a_ut, const type::usertype& b_ut) { return &a_ut == &b_ut; },
         [](const auto&, const auto&) { return false; }
     }, a.t, b.t);
@@ -169,11 +248,11 @@ inline type_ptr make_type_ptr(type::variant v) {
     return std::make_shared<type>(std::move(v));
 }
 
-inline std::int16_t value_size(const type& t) {
+inline std::size_t value_size(const type& t) {
     return std::visit(overload {
-        [](const type::nothing&) { return 0; },
-        [](const type::function&) { return 0; },
-        [](const type::closure&) { return 4; },
+        [](const type::nothing&) { return 0ull; },
+        [](const type::function&) { return 0ull; },
+        [](const type::function_ptr&) { return sizeof(program_addr); },
         [](const type::usertype& ut) { return ut.size; }
     }, t.t);
 }
@@ -193,53 +272,5 @@ inline auto get_binop(binop op, const type::usertype& ut, const type_ptr& rhs) -
     }
     return nullptr;
 }
-
-struct alignas(std::int32_t) instruction {
-    struct BC_t { std::int16_t B, C; };
-
-    opcode OP;
-    std::uint8_t R;
-    std::int16_t A;
-    union {
-        BC_t BC;
-        std::int32_t DI;
-        float DF;
-    };
-
-    instruction() = default;
-    explicit instruction(opcode o) : OP(o), R(0), A(0), DI(0) {}
-    instruction(opcode o, std::int16_t a) : OP(o), R(0), A(a), DI(0) {}
-    instruction(opcode o, std::int16_t a, BC_t bc) : OP(o), R(0), A(a), BC(bc) {}
-    instruction(opcode o, std::int16_t a, std::int32_t di) : OP(o), R(0), A(a), DI(di) {}
-    instruction(opcode o, std::int16_t a, float df) : OP(o), R(0), A(a), DF(df) {}
-};
-
-static_assert(sizeof(instruction) == sizeof(std::int64_t));
-
-struct global_addr {
-    std::uint16_t mod;
-    std::uint16_t off;
-};
-
-struct stack_rep {
-    std::uint16_t soff;
-};
-
-struct symbol {
-    std::string name;
-    std::int16_t addr;
-};
-
-struct import {
-    std::string modname;
-    std::vector<symbol> symbols;
-};
-
-struct module {
-    std::vector<instruction> text;
-    std::vector<symbol> exports;
-    std::vector<import> imports;
-    std::uint16_t entry_point;
-};
 
 }
