@@ -1,5 +1,6 @@
 #include "interp.hpp"
 
+#include <algorithm>
 #include <iostream>
 
 namespace moonflower {
@@ -13,8 +14,9 @@ auto stack_cast(std::byte* stack, std::int16_t addr) -> T& {
     return *reinterpret_cast<T*>(stack + addr);
 }
 
-int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
+interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     const instruction* text = S.modules[mod_idx].text.data();
+    std::byte* data = S.modules[mod_idx].data.data();
     const instruction* PC = text + func_addr;
     std::byte* stack = S.stack.get() + retc;
     instruction I;
@@ -25,11 +27,12 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
 
     const auto fetch = [&I, &PC]{ I = *PC; ++PC; };
 
-    const auto mf_func_call = [&S, &mod_idx, &text, &PC, &stack](std::int16_t stack_top, program_addr addr) {
+    const auto mf_func_call = [&S, &mod_idx, &text, &data, &PC, &stack](std::int16_t stack_top, program_addr addr) {
         stack_cast<program_addr>(stack, stack_top + OFF_RET_ADDR) = {mod_idx, std::uint16_t(PC - text)};
         stack_cast<stack_rep>(stack, stack_top + OFF_RET_STACK).soff = stack_top;
         mod_idx = addr.mod;
         text = S.modules[mod_idx].text.data();
+        data = S.modules[mod_idx].data.data();
         PC = text + addr.off;
         stack += stack_top + OFF_RET_INC;
     };
@@ -39,7 +42,7 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
 
         switch (I.OP) {
             case TERMINATE:
-                return I.A;
+                return {I.A, "terminate"};
 
             // constant loads
             case ISETC:
@@ -52,6 +55,11 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
             // address load
             case SETADR:
                 stack_cast<program_addr>(stack, I.A) = {mod_idx, std::uint16_t(I.DI)};
+                break;
+
+            // data load
+            case SETDAT:
+                std::copy_n(data + I.BC.B, I.BC.C, stack + I.A);
                 break;
 
             // copy
@@ -143,7 +151,7 @@ int interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
 
             // invalid ops
             default:
-                return -1;
+                return {-1, "invalid operation"};
         }
     }
 }

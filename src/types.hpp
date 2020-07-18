@@ -6,6 +6,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -178,7 +179,7 @@ struct polyfunc_rep {
 
 struct symbol {
     std::string name;
-    std::int16_t addr;
+    std::uint16_t addr;
 };
 
 struct import {
@@ -196,12 +197,11 @@ struct module {
 };
 
 inline std::string to_string(const type& t) {
-    using namespace std::literals;
     return std::visit(overload {
-        [](const type::nothing&) { return "[nothing]"s; },
-        [](const type::function&) { return "[function]"s; },
-        [](const type::function_ptr&) { return "[function_ptr]"s; },
-        [](const type::usertype&) { return "[usertype]"s; },
+        [](const type::nothing&) { return "[nothing]"; },
+        [](const type::function&) { return "[function]"; },
+        [](const type::function_ptr&) { return "[function_ptr]"; },
+        [](const type::usertype&) { return "[usertype]"; },
     }, t.t);
 }
 
@@ -248,7 +248,7 @@ inline type_ptr make_type_ptr(type::variant v) {
     return std::make_shared<type>(std::move(v));
 }
 
-inline std::size_t value_size(const type& t) {
+inline std::int16_t value_size(const type& t) {
     return std::visit(overload {
         [](const type::nothing&) { return 0ull; },
         [](const type::function&) { return 0ull; },

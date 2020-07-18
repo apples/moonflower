@@ -22,7 +22,7 @@ load_result state::load(const std::string& name, std::istream& source_code) {
     }
 }
 
-int state::execute(std::int16_t mod_idx, std::int16_t func_addr, int ret_size) {
+interp_result state::execute(std::int16_t mod_idx, std::int16_t func_addr, int ret_size) {
     return interp(*this, mod_idx, func_addr, ret_size);
 }
 

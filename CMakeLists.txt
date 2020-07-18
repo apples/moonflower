@@ -38,6 +38,7 @@ add_executable(moonflower
     src/main.cpp
     src/interp.cpp
     src/state.cpp
+    src/script_context.cpp
     src/compile.cpp)
 set_target_properties(moonflower PROPERTIES CXX_STANDARD 17)
 target_link_libraries(moonflower scriptcompiler)

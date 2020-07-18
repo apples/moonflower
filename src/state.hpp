@@ -3,6 +3,7 @@
 #include "types.hpp"
 #include "compile_message.hpp"
 #include "script_context.hpp"
+#include "interp_result.hpp"
 
 #include <iostream>
 #include <optional>
@@ -27,7 +28,7 @@ public:
 
     load_result load(const std::string& name, std::istream& source_code);
 
-    int execute(std::int16_t mod_idx, std::int16_t func_addr, int ret_size);
+    interp_result execute(std::int16_t mod_idx, std::int16_t func_addr, int ret_size);
 
     std::int16_t get_entry_point(std::int16_t mod_idx) const;
 };

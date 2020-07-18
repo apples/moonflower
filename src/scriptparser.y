@@ -60,6 +60,7 @@ chunk: topblock EOF;
 topblock: %empty
         | topheader
         | topstatseq
+        | topheader topstatseq
         ;
 
 topheader: import
@@ -111,7 +112,7 @@ retstat: RETURN { context.emit_return(@$); }
 type: IDENTIFIER;
 
 statement: vardecl
-         | functioncall
+         | functioncall { context.emit_discard(@$); }
          ;
 
 vardecl: VAR IDENTIFIER '=' expr { context.emit_vardecl($IDENTIFIER, @$); }
