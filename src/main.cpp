@@ -13,6 +13,7 @@
 
 void print_i(moonflower::state* s, std::byte* stk) {
     std::cout << "print_i: " << (void*)s << ", " << (void*)stk << std::endl;
+    std::cout << "  param0 = " << *reinterpret_cast<int*>(stk) << std::endl;
 }
 
 template <typename R, typename... Ts>
@@ -27,10 +28,9 @@ void cfunc_to_mf(moonflower::module& m, const std::string& name, R(*func)(Ts...)
     m.data.insert(m.data.end(), b, e);
     m.exports.push_back({name, text_loc});
 
-    m.text.push_back(instruction{opcode::SETDAT, 0, {data_loc, static_cast<std::int16_t>(sizeof(func))}});
-    m.text.push_back(instruction{opcode::CFCALL, 0});
+    m.text.push_back(instruction{opcode::CFCALL, data_loc});
+    m.text.push_back(instruction{opcode::RET});
 }
-
 
 void load_core(moonflower::state& S) {
     using namespace moonflower;

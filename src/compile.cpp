@@ -67,6 +67,7 @@ translation compile(state& S, const std::string& name, std::istream& source) {
     module m;
     m.name = name;
     m.text = std::move(context.program);
+    m.data = std::move(context.data);
     m.entry_point = context.main_entry;
 
     return {

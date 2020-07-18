@@ -40,7 +40,7 @@ enum opcode : std::uint8_t {
     RET, // no args
 
     CFLOAD, // A: dest, B: cfunc id
-    CFCALL, // A: stack addr of cfunc
+    CFCALL, // A: data addr of cfunc
 
     PFCALL, // A: stack top, B: stack addr of polyfunc_rep
 };
