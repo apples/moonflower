@@ -46,6 +46,7 @@
 %token <int> INTEGER
 %token <bool> BOOLEAN
 
+%left '<'
 %left '+' '-'
 %left '*' '/'
 
@@ -128,7 +129,7 @@ statement: vardecl
          ;
 
 ifstatement: IF '{' ifcaseseq '}'
-           | IF expr <std::int16_t>{ $$ = context.emit_if(@$); } block { context.set_jmp($2, @$); }
+           | IF expr <std::int16_t>{ $$ = context.emit_if(@$); } block { context.set_jmp($3, @$); }
            ;
 
 ifcaseseq: ifcase { context.set_jmp($1, @$); }
@@ -190,6 +191,7 @@ binaryop: expr[lhs] '+' expr[rhs] { $$ = context.expr_binop(binop::ADD, $lhs, $r
         | expr[lhs] '-' expr[rhs] { $$ = context.expr_binop(binop::SUB, $lhs, $rhs, @$); }
         | expr[lhs] '*' expr[rhs] { $$ = context.expr_binop(binop::MUL, $lhs, $rhs, @$); }
         | expr[lhs] '/' expr[rhs] { $$ = context.expr_binop(binop::DIV, $lhs, $rhs, @$); }
+        | expr[lhs] '<' expr[rhs] { $$ = context.expr_binop(binop::CLT, $lhs, $rhs, @$); }
         ;
 
 functioncall: prefixexpr '(' arguments ')' { $$ = context.expr_call($arguments, @$); };

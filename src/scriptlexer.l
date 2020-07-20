@@ -23,6 +23,7 @@
 "-"                                 |
 "*"                                 |
 "/"                                 |
+"<"                                 |
 "_"                                 |
 ":"                                 return parser::symbol_type(text()[0], location());
 "import"                            return parser::make_IMPORT(location());

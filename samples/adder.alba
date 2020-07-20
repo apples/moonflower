@@ -11,19 +11,17 @@ func add(x: int): int {
 }
 
 func fib(n: int): int {
-    var b = true
-    if b {
-        var m = n
-        return m
+    if n < 3 {
+        return n
     }
-    var m = fib(n + 1)
-    return m
+    return fib(n - 1) + fib(n - 2)
 }
 
 func main(x: int, y: int): int {
-    var a = add(x)
-    var b = add(y)
-    var c = a + b - 84
-    print_i(c)
-    return c
+    print_i(fib(32))
+    // var a = add(x)
+    // var b = add(y)
+    // var c = a + b - 84
+    // print_i(c)
+    // return c
 }

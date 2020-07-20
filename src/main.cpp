@@ -113,6 +113,7 @@ void disass(const moonflower::module& mod) {
             case opcode::ISUB: write_ABC("isub", instr); break;
             case opcode::IMUL: write_ABC("imul", instr); break;
             case opcode::IDIV: write_ABC("idiv", instr); break;
+            case opcode::ICLT: write_ABC("iclt", instr); break;
             case opcode::FADD: write_ABC("fadd", instr); break;
             case opcode::FSUB: write_ABC("fsub", instr); break;
             case opcode::FMUL: write_ABC("fmul", instr); break;
