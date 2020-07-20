@@ -20,6 +20,7 @@ enum opcode : std::uint8_t {
 
     ISETC, // A: dest, DI: value
     FSETC, // A: dest, DF: value
+    BSETC, // A: dest, DI: boolean value
     SETADR, // A: dest, DI: text address value
     SETDAT, // A: dest, B: data address, C: size
 
@@ -29,13 +30,15 @@ enum opcode : std::uint8_t {
     ISUB, // A: dest, B: x, C: y
     IMUL, // A: dest, B: x, C: y
     IDIV, // A: dest, B: x, C: y
+    ICLT, // A: dest, B: x, C: y
 
     FADD, // A: dest, B: x, C: y
     FSUB, // A: dest, B: x, C: y
     FMUL, // A: dest, B: x, C: y
     FDIV, // A: dest, B: x, C: y
 
-    JMP, // DI: text address to jump to
+    JMP, // DI: text address to jump to, relative to PC
+    JMPIFN, // A: stack addr of boolean value, DI: text address to jump to if false, relative to PC
     CALL, // A: stack top, B: stack addr of program_addr to call
     RET, // no args
 
@@ -44,6 +47,31 @@ enum opcode : std::uint8_t {
 
     PFCALL, // A: stack top, B: stack addr of polyfunc_rep
 };
+
+struct alignas(std::int64_t) instruction {
+    struct BC_t { std::int16_t B, C; };
+
+    opcode OP;
+    std::uint8_t R;
+    std::int16_t A;
+    union {
+        BC_t BC;
+        std::int32_t DI;
+        float DF;
+        bool DB[4];
+    };
+
+    instruction() = default;
+    explicit instruction(std::array<std::byte, 8> b) { std::memcpy(this, b.data(), 8); }
+    explicit instruction(opcode o) : OP(o), R(0), A(0), DI(0) {}
+    instruction(opcode o, std::int16_t a) : OP(o), R(0), A(a), DI(0) {}
+    instruction(opcode o, std::int16_t a, BC_t bc) : OP(o), R(0), A(a), BC(bc) {}
+    instruction(opcode o, std::int16_t a, std::int32_t di) : OP(o), R(0), A(a), DI(di) {}
+    instruction(opcode o, std::int16_t a, float df) : OP(o), R(0), A(a), DF(df) {}
+    instruction(opcode o, std::int16_t a, bool db0) : OP(o), R(0), A(a), DB{db0} {}
+};
+
+static_assert(sizeof(instruction) == sizeof(std::int64_t));
 
 enum class terminate_reason : std::int8_t {
     NONE,
@@ -61,6 +89,7 @@ enum class binop : std::uint8_t {
     SUB,
     MUL,
     DIV,
+    CLT,
 };
 
 struct type;
@@ -114,7 +143,8 @@ struct type {
         std::size_t size = 0;
         std::unordered_map<std::string, field_def> fields;
         std::unordered_map<binop, std::vector<binop_def>> binops;
-        std::function<void(std::int16_t from, std::int16_t to)> emit_copy;
+        std::function<void(script_context& context, std::int16_t from, std::int16_t to)> emit_copy;
+        std::function<void(script_context& context, const address& from, const address& to)> emit_boolean;
     };
 
     using variant = std::variant<nothing, function, function_ptr, usertype>;
@@ -129,29 +159,6 @@ struct type {
 
     type(variant v): t(std::move(v)) {}
 };
-
-struct alignas(std::int64_t) instruction {
-    struct BC_t { std::int16_t B, C; };
-
-    opcode OP;
-    std::uint8_t R;
-    std::int16_t A;
-    union {
-        BC_t BC;
-        std::int32_t DI;
-        float DF;
-    };
-
-    instruction() = default;
-    explicit instruction(std::array<std::byte, 8> b) { std::memcpy(this, b.data(), 8); }
-    explicit instruction(opcode o) : OP(o), R(0), A(0), DI(0) {}
-    instruction(opcode o, std::int16_t a) : OP(o), R(0), A(a), DI(0) {}
-    instruction(opcode o, std::int16_t a, BC_t bc) : OP(o), R(0), A(a), BC(bc) {}
-    instruction(opcode o, std::int16_t a, std::int32_t di) : OP(o), R(0), A(a), DI(di) {}
-    instruction(opcode o, std::int16_t a, float df) : OP(o), R(0), A(a), DF(df) {}
-};
-
-static_assert(sizeof(instruction) == sizeof(std::int64_t));
 
 struct program_addr {
     std::uint16_t mod;

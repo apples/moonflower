@@ -79,6 +79,10 @@ void disass(const moonflower::module& mod) {
         std::cout << std::setw(10) << name << std::setw(cw) << i.A << std::setw(cw*2) << i.DF;
     };
 
+    auto write_ADB0 = [](const std::string& name, instruction i) {
+        std::cout << std::setw(10) << name << std::setw(cw) << i.A << std::setw(cw*2) << i.DB[0];
+    };
+
     int entry_point = mod.entry_point;
     int textsize = mod.text.size();
 
@@ -86,6 +90,13 @@ void disass(const moonflower::module& mod) {
         if (i == entry_point) {
             std::cout << "__MAIN__:\n";
         }
+
+        for (const auto& [name, addr] : mod.exports) {
+            if (addr == i) {
+                std::cout << name << ":\n";
+            }
+        }
+
         instruction instr = mod.text[i];
 
         std::cout << std::setw(5) << i << ": ";
@@ -94,6 +105,7 @@ void disass(const moonflower::module& mod) {
             case opcode::TERMINATE: write_A("terminate", instr); break;
             case opcode::ISETC: write_ADI("isetc", instr); break;
             case opcode::FSETC: write_ADF("fsetc", instr); break;
+            case opcode::BSETC: write_ADB0("bsetc", instr); break;
             case opcode::SETADR: write_ADI("setadr", instr); break;
             case opcode::SETDAT: write_ABC("setdat", instr); break;
             case opcode::CPY: write_ABC("cpy", instr); break;
@@ -106,6 +118,7 @@ void disass(const moonflower::module& mod) {
             case opcode::FMUL: write_ABC("fmul", instr); break;
             case opcode::FDIV: write_ABC("fdiv", instr); break;
             case opcode::JMP: write_A("jmp", instr); break;
+            case opcode::JMPIFN: write_ADI("jmpifn", instr); break;
             case opcode::CALL: write_AB("call", instr); break;
             case opcode::RET: write("ret"); break;
             case opcode::CFLOAD: write_AB("cfload", instr); break;

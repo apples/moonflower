@@ -10,6 +10,14 @@ func add(x: int): int {
     return x + get42()
 }
 
+func fib(n: int): int {
+    var b = true
+    if b {
+        return n
+    }
+    return n + 1
+}
+
 func main(x: int, y: int): int {
     var a = add(x)
     var b = add(y)

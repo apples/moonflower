@@ -103,7 +103,7 @@ void script_context::promote_local(const std::string& name, const location& loc)
 auto script_context::push_object(const type_ptr& t, const location& loc) -> const stack_object& {
     cur_func.expr_stack.push_back({addresses::local{cur_func.stack_top}, t});
     cur_func.stack_top += value_size(t);
-    if (cur_func.stack_top > 127) {
+    if (cur_func.stack_top > stack_max) {
         messages.emplace_back("Stack overflow", loc);
     }
     return cur_func.expr_stack.back();
@@ -212,6 +212,11 @@ int script_context::expr_const_int(int val) {
     return 1;
 }
 
+int script_context::expr_const_bool(bool val) {
+    push_expr({expression::constant{val}, get_global_type("bool"), category::EXPIRING});
+    return 1;
+}
+
 int script_context::expr_binop(binop op, int lhs_size, int rhs_size, const location& loc) {
     auto lhs = *(rbegin(cur_func.active_exprs) + rhs_size);
     auto rhs = *rbegin(cur_func.active_exprs);
@@ -291,8 +296,10 @@ int script_context::expr_call(int nargs, const location& loc) {
     return expr_size + 1;
 }
 
-void script_context::emit(const instruction& instr) {
+std::int16_t script_context::emit(const instruction& instr) {
+    auto ret = cur_func.text.size();
     cur_func.text.push_back(instr);
+    return static_cast<std::int16_t>(ret);
 }
 
 void script_context::emit_return(const location& loc) {
@@ -362,6 +369,31 @@ void script_context::emit_copy(const object& dest, const object& src) {
     emit({opcode::CPY, dest_addr, {src_addr, value_size(dest.t)}});
 }
 
+std::int16_t script_context::emit_if(const location& loc) {
+    auto bool_type = get_global_type("bool");
+    auto type = cur_func.active_exprs.back().type;
+    if (type != bool_type) {
+        throw std::runtime_error("Not implemented: conversion to bool.");
+    }
+    auto result = eval_expr(0, loc);
+    clear_expr();
+    return std::visit(overload {
+        [&](const addresses::local& a) {
+            return emit({opcode::JMPIFN, a.value, 0});
+        },
+        [](const addresses::data& a) -> std::int16_t { throw std::runtime_error("Not implemented."); },
+        [](const addresses::global& a) -> std::int16_t { throw std::runtime_error("Not implemented."); }
+    }, result.addr);
+}
+
+std::int16_t script_context::emit_jmp(const location& loc) {
+    return emit({opcode::JMP, 0, 0});
+}
+
+void script_context::set_jmp(std::int16_t addr, const location& loc) {
+    cur_func.text[addr].DI = static_cast<std::int16_t>(cur_func.text.size()) - addr - 1;
+}
+
 auto script_context::push_func_args(int expr_loc, int nargs, const location& loc) -> int {
     if (nargs > 0) {
         auto expr_size = get_expr_size(expr_loc);
@@ -422,9 +454,9 @@ object script_context::eval_expr(int expr_loc, const location& loc) {
                 [&](const float& f) {
                     emit({opcode::FSETC, val.addr.value, f});
                 },
-                [&](const auto&) {
-                    emit({opcode::TERMINATE, std::int8_t(terminate_reason::BAD_LITERAL_TYPE)});
-                }
+                [&](const bool& b) {
+                    emit({opcode::BSETC, val.addr.value, b});
+                },
             }, id.val);
             return val;
         },

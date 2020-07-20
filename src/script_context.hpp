@@ -57,7 +57,7 @@ struct expression {
     };
 
     struct constant {
-        std::variant<int, float> val;
+        std::variant<int, float, bool> val;
     };
 
     struct binary {
@@ -98,6 +98,7 @@ struct function_context {
 };
 
 struct script_context {
+    static constexpr int stack_max = 16384;
     state* S;
     std::vector<instruction> program;
     std::vector<std::byte> data;
@@ -149,13 +150,15 @@ struct script_context {
 
     int expr_const_int(int val);
 
+    int expr_const_bool(bool val);
+
     int expr_binop(binop op, int lhs_size, int rhs_size, const location& loc);
 
     int get_expr_size(int loc) const;
 
     int expr_call(int nargs, const location& loc);
 
-    void emit(const instruction& instr);
+    std::int16_t emit(const instruction& instr);
 
     void emit_return(const location& loc);
 
@@ -166,6 +169,12 @@ struct script_context {
     void emit_discard(const location& loc);
 
     void emit_copy(const object& dest, const object& src);
+
+    std::int16_t emit_if(const location& loc);
+
+    std::int16_t emit_jmp(const location& loc);
+
+    void set_jmp(std::int16_t addr, const location& loc);
 
     auto push_func_args(int expr_loc, int nargs, const location& loc) -> int;
 

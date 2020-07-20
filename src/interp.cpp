@@ -62,6 +62,9 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
             case FSETC:
                 byte_cast<float>(stack, I.A) = I.DF;
                 break;
+            case BSETC:
+                byte_cast<bool>(stack, I.A) = I.DB[0];
+                break;
 
             // address load
             case SETADR:
@@ -93,6 +96,9 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
             case IDIV:
                 byte_cast<int>(stack, I.A) = byte_cast<int>(stack, I.BC.B) / byte_cast<int>(stack, I.BC.C);
                 break;
+            case ICLT:
+                byte_cast<bool>(stack, I.A) = byte_cast<int>(stack, I.BC.B) < byte_cast<int>(stack, I.BC.C);
+                break;
 
             // float ops
             case FADD:
@@ -110,7 +116,12 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 
             // control ops
             case JMP:
-                PC = text + I.DI;
+                PC += I.DI;
+                break;
+            case JMPIFN:
+                if (!byte_cast<bool>(stack, I.A)) {
+                    PC += I.DI;
+                }
                 break;
             case CALL: {
                 const auto& addr = byte_cast<program_addr>(stack, I.BC.B);

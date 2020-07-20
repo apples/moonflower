@@ -16,6 +16,7 @@
     #include "script_context.hpp"
     #include "location.hpp"
     #include <string>
+    #include <cstdint>
 
     namespace moonflower_script {
         class lexer;
@@ -39,9 +40,11 @@
 %token IMPORT EXPORT AS
 %token FUNC RETURN
 %token VAR
+%token IF ARROW
 
 %token <std::string> IDENTIFIER
 %token <int> INTEGER
+%token <bool> BOOLEAN
 
 %left '+' '-'
 %left '*' '/'
@@ -50,6 +53,7 @@
 
 %type <int> expr prefixexpr literal binaryop functioncall
 %type <int> arguments argumentseq
+%type <std::int16_t> ifcase
 
 %start chunk
 
@@ -113,7 +117,51 @@ type: IDENTIFIER;
 
 statement: vardecl
          | functioncall { context.emit_discard(@$); }
+         | ifstatement
          ;
+
+ifstatement: IF '{' ifcaseseq '}'
+           | IF expr <std::int16_t>{ $$ = context.emit_if(@$); } '{' block '}' { context.set_jmp($2, @$); }
+           ;
+
+ifcaseseq: ifcase { context.set_jmp($1, @$); }
+         | ifcase ifcaseseq { context.set_jmp($1, @$); }
+         | ifcasedefault
+         ;
+
+ifcase: expr <std::int16_t>{ $$ = context.emit_if(@$); } '{' block '}' { $$ = context.emit_jmp(@$); context.set_jmp($2, @$); }
+      ;
+
+ifcasedefault: '_' '{' block '}'
+             ;
+
+/*
+switchblock: switchcase
+           | switchcase 
+           ;
+
+switchcaseseq: switchcase
+             | switchcase switchcaseseq { context.set_jmp($1, @$); $$ = $2; }
+             ;
+
+switchcase: expr <std::int16_t>{ $$ = context.emit_if(@$); } ARROW '{' block '}' { $$ = context.emit_jmp(@$); context.set_jmp($2, @$); }
+          | '_' ARROW '{' block '}' { $$ = context.emit_jmp(@$); }
+          ;
+
+switchcasedefault: '_' ARROW '{' block '}'
+                 ;
+
+ifstatementfull: ifstatement { context.set_jmp($1, @$); }
+               | ifstatement <std::int16_t>{ $$ = context.emit_jmp(@$); context.set_jmp($1, @$); } elsestatement { context.set_jmp($2, @$); }
+               ;
+
+ifstatement: IF expr <std::int16_t>{ $$ = context.emit_if(@$); } '{' block '}' { $$ = $3; }
+           ;
+
+elsestatement: ELSE '{' block '}'
+             | ELSE ifstatementfull
+             ;
+*/
 
 vardecl: VAR IDENTIFIER '=' expr { context.emit_vardecl($IDENTIFIER, @$); }
        ;
@@ -128,6 +176,7 @@ prefixexpr: literal { $$ = $1; }
           ;
 
 literal: INTEGER { $$ = context.expr_const_int($INTEGER); }
+       | BOOLEAN { $$ = context.expr_const_bool($BOOLEAN); }
        ;
 
 binaryop: expr[lhs] '+' expr[rhs] { $$ = context.expr_binop(binop::ADD, $lhs, $rhs, @$); }

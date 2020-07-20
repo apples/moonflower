@@ -10,6 +10,17 @@ translation compile(state& S, const std::string& name, std::istream& source) {
     auto context = moonflower::script_context{S};
     context.program.push_back(moonflower::instruction{moonflower::TERMINATE});
 
+    auto& bool_type = context.new_usertype("bool");
+    auto bool_type_ptr = context.get_global_type("bool");
+    bool_type.size = sizeof(bool);
+    bool_type.emit_boolean = [](script_context& context, const address& dest, const address& source) {
+        auto dest_l = std::get<addresses::local>(dest).value;
+        auto source_l = std::get<addresses::local>(source).value;
+        if (dest_l != source_l) {
+            context.emit({opcode::CPY, dest_l, {source_l, static_cast<std::int16_t>(sizeof(bool))}});
+        }
+    };
+
     auto& int_type = context.new_usertype("int");
     auto int_type_ptr = context.get_global_type("int");
     int_type.size = sizeof(int);
@@ -47,6 +58,15 @@ translation compile(state& S, const std::string& name, std::istream& source) {
             auto lhs_l = std::get<addresses::local>(lhs).value;
             auto rhs_l = std::get<addresses::local>(rhs).value;
             context.emit({opcode::IDIV, dest_l, {lhs_l, rhs_l}});
+        }}
+    };
+    int_type.binops[binop::CLT] = {
+        { int_type_ptr, bool_type_ptr,
+        [](script_context& context, const address& dest, const address& lhs, const address& rhs) {
+            auto dest_l = std::get<addresses::local>(dest).value;
+            auto lhs_l = std::get<addresses::local>(lhs).value;
+            auto rhs_l = std::get<addresses::local>(rhs).value;
+            context.emit({opcode::ICLT, dest_l, {lhs_l, rhs_l}});
         }}
     };
 
