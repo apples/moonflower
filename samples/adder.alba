@@ -13,9 +13,11 @@ func add(x: int): int {
 func fib(n: int): int {
     var b = true
     if b {
-        return n
+        var m = n
+        return m
     }
-    return n + 1
+    var m = n + 1
+    return m
 }
 
 func main(x: int, y: int): int {

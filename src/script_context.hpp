@@ -162,6 +162,10 @@ struct script_context {
 
     void emit_return(const location& loc);
 
+    int begin_block(const location& loc);
+
+    void end_block(int unwind_to, bool cleanup, const location& loc);
+
     void clear_expr();
 
     void emit_vardecl(const std::string& name, const location& loc);

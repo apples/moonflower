@@ -315,7 +315,32 @@ void script_context::emit_return(const location& loc) {
             [](const addresses::global& a) { throw std::runtime_error("Not implemented."); }
         }, result.addr);
     }
+    for (auto i = 0; i < cur_func.local_stack.size(); ++i) {
+        auto& local = cur_func.local_stack[cur_func.local_stack.size() - i - 1].obj;
+        emit_destroy(local);
+    }
     emit(instruction{opcode::RET});
+}
+
+int script_context::begin_block(const location& loc) {
+    return cur_func.local_stack.size();
+}
+
+void script_context::end_block(int unwind_to, bool cleanup, const location& loc) {
+    while (cur_func.local_stack.size() != unwind_to) {
+        auto& local = cur_func.local_stack.back().obj;
+        if (cleanup) {
+            emit_destroy(local);
+        }
+        auto sz = value_size(local.t);
+        cur_func.local_stack.pop_back();
+        if (cur_func.local_stack.empty()) {
+            cur_func.stack_top -= sz;
+        } else {
+            auto& new_back = cur_func.local_stack.back().obj;
+            cur_func.stack_top = new_back.addr.value + value_size(new_back.t);
+        }
+    }
 }
 
 void script_context::clear_expr() {

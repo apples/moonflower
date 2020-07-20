@@ -53,6 +53,7 @@
 
 %type <int> expr prefixexpr literal binaryop functioncall
 %type <int> arguments argumentseq
+%type <int> blockstatseq
 %type <std::int16_t> ifcase
 
 %start chunk
@@ -88,7 +89,7 @@ topstatement: funcdecl
 
 funcdecl: FUNC IDENTIFIER[id] { context.begin_func($id); } funcbody { context.end_func(); };
 
-funcbody: '(' funcparams ')' ':' type '{' block '}';
+funcbody: '(' funcparams ')' ':' type block;
 
 funcparams: %empty
           | paramseq
@@ -100,10 +101,14 @@ paramseq: paramdecl
 
 paramdecl: IDENTIFIER[id] ':' type { context.add_param($id, @$); };
 
-block: %empty
-     | statseq
-     | block retstat
+block: '{' '}'
+     | '{' retstat '}'
+     | '{' blockstatseq '}' { context.end_block($2, true, @$); }
+     | '{' blockstatseq retstat '}' { context.end_block($2, false, @$); }
      ;
+
+blockstatseq: <int>{ $$ = context.begin_block(@$); } statseq { $$ = $1; }
+            ;
 
 statseq: statement
        | statseq statement
@@ -121,7 +126,7 @@ statement: vardecl
          ;
 
 ifstatement: IF '{' ifcaseseq '}'
-           | IF expr <std::int16_t>{ $$ = context.emit_if(@$); } '{' block '}' { context.set_jmp($2, @$); }
+           | IF expr <std::int16_t>{ $$ = context.emit_if(@$); } block { context.set_jmp($2, @$); }
            ;
 
 ifcaseseq: ifcase { context.set_jmp($1, @$); }
@@ -129,10 +134,10 @@ ifcaseseq: ifcase { context.set_jmp($1, @$); }
          | ifcasedefault
          ;
 
-ifcase: expr <std::int16_t>{ $$ = context.emit_if(@$); } '{' block '}' { $$ = context.emit_jmp(@$); context.set_jmp($2, @$); }
+ifcase: expr <std::int16_t>{ $$ = context.emit_if(@$); } block { $$ = context.emit_jmp(@$); context.set_jmp($2, @$); }
       ;
 
-ifcasedefault: '_' '{' block '}'
+ifcasedefault: '_' block
              ;
 
 /*
