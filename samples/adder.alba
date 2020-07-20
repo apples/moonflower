@@ -16,7 +16,7 @@ func fib(n: int): int {
         var m = n
         return m
     }
-    var m = n + 1
+    var m = fib(n + 1)
     return m
 }
 

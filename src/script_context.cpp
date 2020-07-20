@@ -54,8 +54,10 @@ void script_context::import(const std::string& func_name) {
     }
 }
 
-void script_context::begin_func(const std::string& name) {
+void script_context::begin_func(const std::string& name, const location& loc) {
     cur_func = {name};
+    cur_func.type = make_type_ptr(type::function{});
+    static_scope[name] = object{addresses::global{-1}, cur_func.type};
 }
 
 void script_context::end_func() {
@@ -65,20 +67,28 @@ void script_context::end_func() {
         main_entry = entry;
     }
 
-    auto rettype = get_global_type("int");
+    static_scope[cur_func.name] = {addresses::global{entry}, cur_func.type};
 
-    auto t = std::make_shared<type>(type::function{rettype, {}});
-
-    static_scope[cur_func.name] = {addresses::global{entry}, t}; // TODO: function types
-
-    for (const auto& instr : cur_func.text) {
+    for (auto instr : cur_func.text) {
         // address fixups go here
+        switch (instr.OP) {
+            case opcode::SETADR:
+                if (instr.DI == -1) {
+                    instr.DI = entry;
+                }
+                break;
+        }
         program.push_back(instr);
     }
 }
 
-void script_context::add_param(const std::string& name, const location& loc) {
-    add_local(name, get_global_type("int"), loc);
+void script_context::add_param(const std::string& name, const type_ptr& type, const location& loc) {
+    add_local(name, type, loc);
+    std::get<type::function>(cur_func.type->t).params.push_back(type);
+}
+
+void script_context::set_return_type(const type_ptr& type, const location& loc) {
+    std::get<type::function>(cur_func.type->t).ret_type = type;
 }
 
 auto script_context::add_local(const std::string& name, const type_ptr& t, const location& loc) -> const stack_object& {

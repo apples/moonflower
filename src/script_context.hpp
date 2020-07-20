@@ -91,6 +91,7 @@ struct function_context {
     std::vector<expression> active_exprs;
     std::vector<variable> local_stack;
     std::vector<stack_object> expr_stack;
+    type_ptr type;
     std::int16_t stack_top = 0;
 
     function_context() = default;
@@ -120,11 +121,13 @@ struct script_context {
 
     void import(const std::string& func_name);
 
-    void begin_func(const std::string& name);
+    void begin_func(const std::string& name, const location& loc);
 
     void end_func();
 
-    void add_param(const std::string& name, const location& loc);
+    void add_param(const std::string& name, const type_ptr& type, const location& loc);
+
+    void set_return_type(const type_ptr& type, const location& loc);
 
     auto add_local(const std::string& name, const type_ptr& t, const location& loc) -> const stack_object&;
 

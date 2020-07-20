@@ -55,6 +55,7 @@
 %type <int> arguments argumentseq
 %type <int> blockstatseq
 %type <std::int16_t> ifcase
+%type <moonflower::type_ptr> type
 
 %start chunk
 
@@ -87,9 +88,9 @@ topstatseq: topstatement
 topstatement: funcdecl
             ;
 
-funcdecl: FUNC IDENTIFIER[id] { context.begin_func($id); } funcbody { context.end_func(); };
+funcdecl: FUNC IDENTIFIER[id] { context.begin_func($id, @$); } funcbody { context.end_func(); };
 
-funcbody: '(' funcparams ')' ':' type block;
+funcbody: '(' funcparams ')' ':' type { context.set_return_type($type, @$); } block;
 
 funcparams: %empty
           | paramseq
@@ -99,7 +100,7 @@ paramseq: paramdecl
         | paramseq ',' paramdecl
         ;
 
-paramdecl: IDENTIFIER[id] ':' type { context.add_param($id, @$); };
+paramdecl: IDENTIFIER[id] ':' type { context.add_param($id, $type, @$); };
 
 block: '{' '}'
      | '{' retstat '}'
@@ -118,7 +119,8 @@ retstat: RETURN { context.emit_return(@$); }
        | RETURN expr { context.emit_return(@$); }
        ;
 
-type: IDENTIFIER;
+type: IDENTIFIER { $$ = context.get_global_type($IDENTIFIER); }
+    ;
 
 statement: vardecl
          | functioncall { context.emit_discard(@$); }
