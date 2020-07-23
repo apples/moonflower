@@ -383,8 +383,10 @@ void script_context::emit_vardecl(const std::string& name, const location& loc) 
 void script_context::emit_discard(const location& loc) {
     auto type = cur_func.active_exprs.back().type;
     auto dest = cur_func.stack_top;
+    auto unwind_loc = cur_func.expr_stack.size();
     auto result = eval_expr(0, loc);
     clear_expr();
+    pop_objects_until(unwind_loc);
     std::visit(overload {
         [&](const addresses::local& a) {
             emit_destroy(result);

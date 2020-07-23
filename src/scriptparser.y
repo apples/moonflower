@@ -55,6 +55,7 @@
 %type <int> expr prefixexpr literal binaryop functioncall
 %type <int> arguments argumentseq
 %type <int> blockstatseq
+%type <bool> block
 %type <std::int16_t> ifcase
 %type <moonflower::type_ptr> type
 
@@ -91,7 +92,8 @@ topstatement: funcdecl
 
 funcdecl: FUNC IDENTIFIER[id] { context.begin_func($id, @$); } funcbody { context.end_func(); };
 
-funcbody: '(' funcparams ')' ':' type { context.set_return_type($type, @$); } block;
+funcbody: '(' funcparams ')' ':' type { context.set_return_type($type, @$); } block { if (!$block) context.emit_return(@$); }
+        ;
 
 funcparams: %empty
           | paramseq
@@ -103,10 +105,10 @@ paramseq: paramdecl
 
 paramdecl: IDENTIFIER[id] ':' type { context.add_param($id, $type, @$); };
 
-block: '{' '}'
-     | '{' retstat '}'
-     | '{' blockstatseq '}' { context.end_block($2, true, @$); }
-     | '{' blockstatseq retstat '}' { context.end_block($2, false, @$); }
+block: '{' '}' { $$ = false; }
+     | '{' retstat '}' { $$ = true; }
+     | '{' blockstatseq '}' { context.end_block($2, true, @$); $$ = false; }
+     | '{' blockstatseq retstat '}' { context.end_block($2, false, @$); $$ = true; }
      ;
 
 blockstatseq: <int>{ $$ = context.begin_block(@$); } statseq { $$ = $1; }

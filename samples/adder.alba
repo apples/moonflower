@@ -19,9 +19,9 @@ func fib(n: int): int {
 
 func main(x: int, y: int): int {
     print_i(fib(32))
-    // var a = add(x)
-    // var b = add(y)
-    // var c = a + b - 84
-    // print_i(c)
-    // return c
+    var a = add(x)
+    var b = add(y)
+    var c = a + b - 84
+    print_i(c)
+    return c
 }

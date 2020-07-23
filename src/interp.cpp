@@ -3,6 +3,12 @@
 #include <algorithm>
 #include <iostream>
 
+#ifdef NDEBUG
+#define MOONFLOWER_DEBUG 0
+#else
+#define MOONFLOWER_DEBUG 1
+#endif
+
 namespace moonflower {
 
 constexpr int OFF_RET_ADDR = 0;
@@ -16,7 +22,9 @@ auto byte_cast(std::byte* stack, std::int16_t addr) -> T& {
 
 interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     const instruction* text = S.modules[mod_idx].text.data();
+#if MOONFLOWER_DEBUG
     const instruction* text_end = S.modules[mod_idx].text.data() + S.modules[mod_idx].text.size();
+#endif
     const char* terminate_reason = "terminate";
     std::byte* data = S.modules[mod_idx].data.data();
     const instruction* PC = text + func_addr;
@@ -27,22 +35,32 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
     byte_cast<stack_rep>(stack, OFF_RET_STACK) = {0};
     stack += OFF_RET_INC;
 
-    const auto fetch = [&I, &PC, &text_end, &terminate_reason]{
+#if MOONFLOWER_DEBUG
+    const auto fetch = [&]{
         if (PC >= text_end) {
             I = instruction{opcode::TERMINATE, -2};
             terminate_reason = "runoff";
+            std::cerr << "runoff at " << (PC - text) << " module " << S.modules[mod_idx].name << " text " << (void*)text << " text_end " << (void*)text_end << "\n";
         } else {
             I = *PC;
             ++PC;
         }
     };
+#else
+    const auto fetch = [&I, &PC]{
+        I = *PC;
+        ++PC;
+    };
+#endif
 
-    const auto mf_func_call = [&S, &mod_idx, &text, &text_end, &data, &PC, &stack](std::int16_t stack_top, program_addr addr) {
+    const auto mf_func_call = [&](std::int16_t stack_top, program_addr addr) {
         byte_cast<program_addr>(stack, stack_top + OFF_RET_ADDR) = {mod_idx, std::uint16_t(PC - text)};
         byte_cast<stack_rep>(stack, stack_top + OFF_RET_STACK).soff = stack_top;
         mod_idx = addr.mod;
         text = S.modules[mod_idx].text.data();
+#if MOONFLOWER_DEBUG
         text_end = S.modules[mod_idx].text.data() + S.modules[mod_idx].text.size();
+#endif
         data = S.modules[mod_idx].data.data();
         PC = text + addr.off;
         stack += stack_top + OFF_RET_INC;
@@ -132,6 +150,9 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
                 const auto& addr = byte_cast<program_addr>(stack, OFF_RET_ADDR - OFF_RET_INC);
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
+#if MOONFLOWER_DEBUG
+                text_end = text + S.modules[mod_idx].text.size();
+#endif
                 PC = text + addr.off;
                 stack -= byte_cast<stack_rep>(stack, OFF_RET_STACK - OFF_RET_INC).soff + OFF_RET_INC;
                 break;
