@@ -96,8 +96,12 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 
             // copy
             case CPY:
-                for (int i = 0; i < I.BC.C; ++i) {
-                    stack[I.A + i] = stack[I.BC.B + i];
+                if (I.BC.B == sizeof(int)) { // optimization
+                    std::copy_n(stack + I.BC.B, sizeof(int), stack + I.A);
+                } else if (I.BC.B == sizeof(void*)) { // optimization
+                    std::copy_n(stack + I.BC.B, sizeof(void*), stack + I.A);
+                } else {
+                    std::copy_n(stack + I.BC.B, I.BC.C, stack + I.A);
                 }
                 break;
 
