@@ -8,12 +8,13 @@
 #include <fstream>
 #include <memory>
 #include <vector>
+#include <chrono>
 
 #include <iomanip>
 
 void print_i(moonflower::state* s, std::byte* stk) {
     std::cout << "print_i: " << (void*)s << ", " << (void*)stk << std::endl;
-    std::cout << "  param0 = " << *reinterpret_cast<int*>(stk) << std::endl;
+    std::cout << "  param0 = " << *reinterpret_cast<int*>(stk+8) << std::endl;
 }
 
 template <typename R, typename... Ts>
@@ -150,6 +151,10 @@ int main(int argc, char* argv[]) try {
         return EXIT_FAILURE;
     }
 
+    using clock = std::chrono::steady_clock;
+
+    const auto A = clock::now();
+
     std::ifstream file (argv[1], std::ios::binary);
 
     if (!file) {
@@ -178,20 +183,35 @@ int main(int argc, char* argv[]) try {
         return EXIT_FAILURE;
     }
 
+#ifdef NDEBUG
+#else
     for (auto& mod : S.modules) {
         disass(mod);
     }
+#endif
 
     S.stacksize = 64 * 1024 * 1024; // 64 MB stack
     S.stack = std::make_unique<std::byte[]>(S.stacksize);
 
-    for (int i = 0; i < argc-2; ++i) {
-        *reinterpret_cast<int*>(&S.stack[12+i*4]) = std::stoi(argv[2+i]);
-    }
+    //for (int i = 0; i < argc-2; ++i) {
+        //*reinterpret_cast<int*>(&S.stack[12+i*4]) = std::stoi(argv[2+i]);
+    //}
 
     auto entry_point = S.get_entry_point(*mod_idx);
 
+    const auto B = clock::now();
+
+    *reinterpret_cast<int*>(&S.stack[12]) = 32;
     auto ret = moonflower::interp(S, *mod_idx, entry_point, sizeof(int));
+
+    const auto C = clock::now();
+
+    for (int i=0; i < 100; ++i) {
+        *reinterpret_cast<int*>(&S.stack[12]) = 32;
+        ret = moonflower::interp(S, *mod_idx, entry_point, sizeof(int));
+    }
+
+    const auto D = clock::now();
 
     if (ret.retval != 0) {
         std::cerr << "interp error: " << ret.error << std::endl;
@@ -200,6 +220,18 @@ int main(int argc, char* argv[]) try {
 
     std::cout << "result (i) = " << *reinterpret_cast<int*>(&S.stack[0]) << std::endl;
     std::cout << "result (f) = " << *reinterpret_cast<float*>(&S.stack[0]) << std::endl;
+
+    auto print = [](const auto& label, const auto& dur) {
+        std::cout << std::setw(10) << label << ":" <<
+            std::setw(12) << std::chrono::duration_cast<std::chrono::nanoseconds>(dur).count() << "ns  " <<
+            std::setw(12) << std::chrono::duration_cast<std::chrono::duration<float>>(dur).count() << "s" <<
+            "\n";
+    };
+
+    print("setup time", B-A);
+    print("first run", C-B);
+    print("100 runs", D-C);
+    print("total", D-A);
 
     return EXIT_SUCCESS;
 } catch (const moonflower_script::parser::syntax_error& e) {

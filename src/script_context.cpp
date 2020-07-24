@@ -327,6 +327,9 @@ std::int16_t script_context::emit(const instruction& instr) {
 void script_context::emit_return(const location& loc) {
     if (!cur_func.active_exprs.empty()) {
         auto type = cur_func.active_exprs.back().type;
+        if (type != std::get<type::function>(cur_func.type->t).ret_type) {
+            messages.emplace_back("Return type does not match", loc);
+        }
         auto result = eval_expr(0, loc);
         clear_expr();
         std::visit(overload {
