@@ -24,6 +24,7 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
     const instruction* text = S.modules[mod_idx].text.data();
 #if MOONFLOWER_DEBUG
     const instruction* text_end = S.modules[mod_idx].text.data() + S.modules[mod_idx].text.size();
+    volatile int icount = 0;
 #endif
     const char* terminate_reason = "terminate";
     std::byte* data = S.modules[mod_idx].data.data();
@@ -37,6 +38,7 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 
 #if MOONFLOWER_DEBUG
     const auto fetch = [&]{
+        ++icount;
         if (PC >= text_end) {
             I = instruction{opcode::TERMINATE, -2};
             terminate_reason = "runoff";
@@ -54,16 +56,17 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 #endif
 
     const auto mf_func_call = [&](std::int16_t stack_top, program_addr addr) {
-        byte_cast<program_addr>(stack, stack_top + OFF_RET_ADDR) = {mod_idx, std::uint16_t(PC - text)};
-        byte_cast<stack_rep>(stack, stack_top + OFF_RET_STACK).soff = stack_top;
+        stack += stack_top;
+        byte_cast<program_addr>(stack, OFF_RET_ADDR) = {mod_idx, std::uint16_t(PC - text)};
+        byte_cast<stack_rep>(stack, OFF_RET_STACK).soff = stack_top;
         mod_idx = addr.mod;
         text = S.modules[mod_idx].text.data();
-#if MOONFLOWER_DEBUG
-        text_end = S.modules[mod_idx].text.data() + S.modules[mod_idx].text.size();
-#endif
         data = S.modules[mod_idx].data.data();
         PC = text + addr.off;
-        stack += stack_top + OFF_RET_INC;
+#if MOONFLOWER_DEBUG
+        text_end = text + S.modules[mod_idx].text.size();
+#endif
+        stack += OFF_RET_INC;
     };
 
     while (true) {
@@ -96,9 +99,9 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 
             // copy
             case CPY:
-                if (I.BC.B == sizeof(int)) { // optimization
+                if (I.BC.C == sizeof(int)) { // optimization
                     std::copy_n(stack + I.BC.B, sizeof(int), stack + I.A);
-                } else if (I.BC.B == sizeof(void*)) { // optimization
+                } else if (I.BC.C == sizeof(void*)) { // optimization
                     std::copy_n(stack + I.BC.B, sizeof(void*), stack + I.A);
                 } else {
                     std::copy_n(stack + I.BC.B, I.BC.C, stack + I.A);
@@ -154,10 +157,11 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
                 const auto& addr = byte_cast<program_addr>(stack, OFF_RET_ADDR - OFF_RET_INC);
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
+                data = S.modules[mod_idx].data.data();
+                PC = text + addr.off;
 #if MOONFLOWER_DEBUG
                 text_end = text + S.modules[mod_idx].text.size();
 #endif
-                PC = text + addr.off;
                 stack -= byte_cast<stack_rep>(stack, OFF_RET_STACK - OFF_RET_INC).soff + OFF_RET_INC;
                 break;
             }

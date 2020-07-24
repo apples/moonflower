@@ -91,13 +91,24 @@ void script_context::set_return_type(const type_ptr& type, const location& loc) 
     std::get<type::function>(cur_func.type->t).ret_type = type;
 }
 
-auto script_context::add_local(const std::string& name, const type_ptr& t, const location& loc) -> const stack_object& {
-    if (!cur_func.expr_stack.empty()) {
-        messages.emplace_back("Can't add local while expressions are on the stack", loc);
-        pop_objects_until(0);
+auto script_context::get_aligned_top(std::int16_t align, bool exclude_expr) -> std::int16_t {
+    auto top = std::int16_t{0};
+    if (!exclude_expr && !cur_func.expr_stack.empty()) {
+        auto& back = cur_func.expr_stack.back();
+        top = back.addr.value + value_size(back.t);
+    } else if (!cur_func.local_stack.empty()) {
+        auto& back = cur_func.local_stack.back().obj;
+        top = back.addr.value + value_size(back.t);
     }
-    cur_func.local_stack.emplace_back(name, stack_object{{cur_func.stack_top}, t});
-    cur_func.stack_top += value_size(*t);
+    if (top % align != 0) {
+        top += align - (top % align);
+    }
+    return top;
+}
+
+auto script_context::add_local(const std::string& name, const type_ptr& t, const location& loc) -> const stack_object& {
+    push_object(t, loc);
+    promote_local(name, loc);
     return cur_func.local_stack.back().obj;
 }
 
@@ -111,24 +122,13 @@ void script_context::promote_local(const std::string& name, const location& loc)
 }
 
 auto script_context::push_object(const type_ptr& t, const location& loc) -> const stack_object& {
-    cur_func.expr_stack.push_back({addresses::local{cur_func.stack_top}, t});
-    cur_func.stack_top += value_size(t);
-    if (cur_func.stack_top > stack_max) {
+    auto top = get_aligned_top(value_align(t), false);
+    cur_func.expr_stack.push_back({addresses::local{top}, t});
+    top += value_size(t);
+    if (top > stack_max) {
         messages.emplace_back("Stack overflow", loc);
     }
     return cur_func.expr_stack.back();
-}
-
-void script_context::pop_object(const stack_object& obj) {
-    if (cur_func.expr_stack.empty()) {
-        throw std::runtime_error("Nothing to pop!");
-    }
-    if (obj.addr.value != cur_func.expr_stack.back().addr.value) {
-        throw std::runtime_error("Popping the wrong object!");
-    }
-    emit_destroy(obj);
-    cur_func.stack_top = obj.addr.value;
-    cur_func.expr_stack.pop_back();
 }
 
 void script_context::pop_objects_until(int pos, bool skip_destroy) {
@@ -136,7 +136,6 @@ void script_context::pop_objects_until(int pos, bool skip_destroy) {
         if (!skip_destroy) {
             emit_destroy(cur_func.expr_stack.back());
         }
-        cur_func.stack_top = cur_func.expr_stack.back().addr.value;
         cur_func.expr_stack.pop_back();
     }
 }
@@ -338,18 +337,11 @@ int script_context::begin_block(const location& loc) {
 
 void script_context::end_block(int unwind_to, bool cleanup, const location& loc) {
     while (cur_func.local_stack.size() != unwind_to) {
-        auto& local = cur_func.local_stack.back().obj;
         if (cleanup) {
+            auto& local = cur_func.local_stack.back().obj;
             emit_destroy(local);
         }
-        auto sz = value_size(local.t);
         cur_func.local_stack.pop_back();
-        if (cur_func.local_stack.empty()) {
-            cur_func.stack_top -= sz;
-        } else {
-            auto& new_back = cur_func.local_stack.back().obj;
-            cur_func.stack_top = new_back.addr.value + value_size(new_back.t);
-        }
     }
 }
 
@@ -359,11 +351,11 @@ void script_context::clear_expr() {
 
 void script_context::emit_vardecl(const std::string& name, const location& loc) {
     auto type = cur_func.active_exprs.back().type;
-    auto dest = cur_func.stack_top;
     auto result = eval_expr(0, loc);
     clear_expr();
     std::visit(overload {
         [&](const addresses::local& a) {
+            auto dest = get_aligned_top(value_align(result.t), true);
             if (a.value == dest) {
                 promote_local(name, loc);
             } else {
@@ -382,7 +374,6 @@ void script_context::emit_vardecl(const std::string& name, const location& loc) 
 
 void script_context::emit_discard(const location& loc) {
     auto type = cur_func.active_exprs.back().type;
-    auto dest = cur_func.stack_top;
     auto unwind_loc = cur_func.expr_stack.size();
     auto result = eval_expr(0, loc);
     clear_expr();
@@ -436,9 +427,9 @@ auto script_context::push_func_args(int expr_loc, int nargs, const location& loc
         auto expr_size = get_expr_size(expr_loc);
         auto func_loc = push_func_args(expr_loc + expr_size, nargs - 1, loc);
 
-        auto dest = cur_func.stack_top;
         const auto& expr = *(rbegin(cur_func.active_exprs) + expr_loc);
         auto type = expr.type;
+        auto dest = get_aligned_top(value_align(type), false);
         auto result = eval_expr(expr_loc, loc);
 
         std::visit(overload {
@@ -498,7 +489,7 @@ object script_context::eval_expr(int expr_loc, const location& loc) {
             return val;
         },
         [&](const expression::binary& id) -> object {
-            auto dest = stack_object{{cur_func.stack_top}, expr.type};
+            auto dest = stack_object{{get_aligned_top(value_align(expr.type), false)}, expr.type};
 
             auto rhs_size = get_expr_size(expr_loc + 1);
             auto lhs_result = eval_expr(expr_loc + 1 + rhs_size, loc);
@@ -531,8 +522,8 @@ object script_context::eval_expr(int expr_loc, const location& loc) {
             auto return_type = expr.type;
             auto dest = push_object(return_type, loc);
             auto unwind_loc = cur_func.expr_stack.size();
-            auto new_stack = cur_func.stack_top;
-            push_object({get_global_type("int")}, loc); // return address
+            auto ret_addr = push_object({get_global_type("int")}, loc); // return address
+            auto new_stack = ret_addr.addr.value;
             push_object({get_global_type("int")}, loc); // return stck
             auto func_loc = push_func_args(expr_loc + 1, call.nargs, loc);
 

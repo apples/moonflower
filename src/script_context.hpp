@@ -92,7 +92,6 @@ struct function_context {
     std::vector<variable> local_stack;
     std::vector<stack_object> expr_stack;
     type_ptr type;
-    std::int16_t stack_top = 0;
 
     function_context() = default;
     function_context(std::string name) : name(std::move(name)) {}
@@ -129,13 +128,13 @@ struct script_context {
 
     void set_return_type(const type_ptr& type, const location& loc);
 
+    auto get_aligned_top(std::int16_t align, bool exclude_expr) -> std::int16_t;
+
     auto add_local(const std::string& name, const type_ptr& t, const location& loc) -> const stack_object&;
 
     void promote_local(const std::string& name, const location& loc);
 
     auto push_object(const type_ptr& t, const location& loc) -> const stack_object&;
-
-    void pop_object(const stack_object& obj);
 
     void pop_objects_until(int pos, bool skip_destroy = false);
 

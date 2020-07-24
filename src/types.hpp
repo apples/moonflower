@@ -141,6 +141,7 @@ struct type {
 
     struct usertype {
         std::size_t size = 0;
+        std::size_t align = 1;
         std::unordered_map<std::string, field_def> fields;
         std::unordered_map<binop, std::vector<binop_def>> binops;
         std::function<void(script_context& context, std::int16_t from, std::int16_t to)> emit_copy;
@@ -266,6 +267,19 @@ inline std::int16_t value_size(const type& t) {
 
 inline std::int16_t value_size(const type_ptr& t) {
     return value_size(*t);
+}
+
+inline std::int16_t value_align(const type& t) {
+    return std::visit(overload {
+        [](const type::nothing&) { return 1ull; },
+        [](const type::function&) { return 1ull; },
+        [](const type::function_ptr&) { return alignof(program_addr); },
+        [](const type::usertype& ut) { return ut.align; }
+    }, t.t);
+}
+
+inline std::int16_t value_align(const type_ptr& t) {
+    return value_align(*t);
 }
 
 inline auto get_binop(binop op, const type::usertype& ut, const type_ptr& rhs) -> const binop_def* {

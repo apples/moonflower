@@ -13,6 +13,7 @@ translation compile(state& S, const std::string& name, std::istream& source) {
     auto& bool_type = context.new_usertype("bool");
     auto bool_type_ptr = context.get_global_type("bool");
     bool_type.size = sizeof(bool);
+    bool_type.align = alignof(bool);
     bool_type.emit_boolean = [](script_context& context, const address& dest, const address& source) {
         auto dest_l = std::get<addresses::local>(dest).value;
         auto source_l = std::get<addresses::local>(source).value;
@@ -24,6 +25,7 @@ translation compile(state& S, const std::string& name, std::istream& source) {
     auto& int_type = context.new_usertype("int");
     auto int_type_ptr = context.get_global_type("int");
     int_type.size = sizeof(int);
+    int_type.align = alignof(int);
     int_type.binops[binop::ADD] = {
         { int_type_ptr, int_type_ptr,
         [](script_context& context, const address& dest, const address& lhs, const address& rhs) {
