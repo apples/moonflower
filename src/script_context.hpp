@@ -142,6 +142,8 @@ struct script_context {
 
     void push_expr(expression expr);
 
+    std::int16_t get_return_value_offset(const type_ptr& t);
+
     stack_object get_return_object();
 
     std::optional<stack_object> stack_lookup(const std::string& name);

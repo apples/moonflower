@@ -2,6 +2,8 @@
 
 #include "state.hpp"
 
+#include <cstddef>
+
 namespace moonflower {
 
 script_context::script_context(state& S) : S(&S) {
@@ -58,6 +60,8 @@ void script_context::begin_func(const std::string& name, const location& loc) {
     cur_func = {name};
     cur_func.type = make_type_ptr(type::function{});
     static_scope[name] = object{addresses::global{-1}, cur_func.type};
+    add_local("?retaddr", get_global_type("int"), loc);
+    add_local("?retstack", get_global_type("int"), loc);
 }
 
 void script_context::end_func() {
@@ -148,10 +152,19 @@ void script_context::push_expr(expression expr) {
     cur_func.active_exprs.push_back(expr);
 }
 
-stack_object script_context::get_return_object() {
-    auto t = get_global_type("int");
+std::int16_t script_context::get_return_value_offset(const type_ptr& t) {
     auto s = value_size(t);
-    return {{std::int16_t(-8 - s)}, t};
+    auto a = value_align(t);
+    auto l = s;
+    if (s % a != 0) {
+        s += a - (s % a);
+    }
+    return -l;
+}
+
+stack_object script_context::get_return_object() {
+    auto t = std::get<type::function>(cur_func.type->t).ret_type;
+    return {{get_return_value_offset(t)}, t};
 }
 
 std::optional<stack_object> script_context::stack_lookup(const std::string& name) {
@@ -520,13 +533,26 @@ object script_context::eval_expr(int expr_loc, const location& loc) {
         },
         [&](const expression::call& call) -> object {
             auto return_type = expr.type;
-            auto dest = push_object(return_type, loc);
             auto unwind_loc = cur_func.expr_stack.size();
-            auto ret_addr = push_object({get_global_type("int")}, loc); // return address
-            auto new_stack = ret_addr.addr.value;
-            push_object({get_global_type("int")}, loc); // return stck
+
+            // calculate maximally-aligned return address with room for return value
+            cur_func.expr_stack.push_back({addresses::local{get_aligned_top(1, true)}, return_type});
+            auto ret_addr = get_aligned_top(alignof(std::max_align_t), true);
+            cur_func.expr_stack.pop_back();
+
+            // calculate actual return value address
+            auto result_addr = static_cast<std::int16_t>(ret_addr + get_return_value_offset(return_type));
+            cur_func.expr_stack.push_back({addresses::local{result_addr}, return_type}); // return value
+            auto result = cur_func.expr_stack.back();
+
+            // return address and return stack
+            cur_func.expr_stack.push_back({addresses::local{ret_addr}, get_global_type("int")}); // return address
+            cur_func.expr_stack.push_back({addresses::local{static_cast<std::int16_t>(ret_addr+4)}, get_global_type("int")}); // return stack
+
+            // argument value calculation
             auto func_loc = push_func_args(expr_loc + 1, call.nargs, loc);
 
+            // function address calculation
             auto func_obj = eval_expr(func_loc, loc);
 
             auto target = std::visit(overload {
@@ -539,11 +565,11 @@ object script_context::eval_expr(int expr_loc, const location& loc) {
                 },
             }, func_obj.addr);
 
-            emit({opcode::CALL, new_stack, {target, 0}});
+            emit({opcode::CALL, ret_addr, {target, 0}});
 
             pop_objects_until(unwind_loc, true);
 
-            return dest;
+            return result;
         },
         [&](const expression::dataload& dl) -> object {
             auto type = expr.type;

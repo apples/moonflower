@@ -13,7 +13,6 @@ namespace moonflower {
 
 constexpr int OFF_RET_ADDR = 0;
 constexpr int OFF_RET_STACK = 4;
-constexpr int OFF_RET_INC = 8;
 
 template <typename T>
 auto byte_cast(std::byte* stack, std::int16_t addr) -> T& {
@@ -34,7 +33,6 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 
     byte_cast<program_addr>(stack, OFF_RET_ADDR) = {0, 0};
     byte_cast<stack_rep>(stack, OFF_RET_STACK) = {0};
-    stack += OFF_RET_INC;
 
 #if MOONFLOWER_DEBUG
     const auto fetch = [&]{
@@ -66,7 +64,6 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 #if MOONFLOWER_DEBUG
         text_end = text + S.modules[mod_idx].text.size();
 #endif
-        stack += OFF_RET_INC;
     };
 
     while (true) {
@@ -154,7 +151,7 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
                 break;
             }
             case RET: {
-                const auto& addr = byte_cast<program_addr>(stack, OFF_RET_ADDR - OFF_RET_INC);
+                const auto& addr = byte_cast<program_addr>(stack, OFF_RET_ADDR);
                 mod_idx = addr.mod;
                 text = S.modules[mod_idx].text.data();
                 data = S.modules[mod_idx].data.data();
@@ -162,7 +159,7 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 #if MOONFLOWER_DEBUG
                 text_end = text + S.modules[mod_idx].text.size();
 #endif
-                stack -= byte_cast<stack_rep>(stack, OFF_RET_STACK - OFF_RET_INC).soff + OFF_RET_INC;
+                stack -= byte_cast<stack_rep>(stack, OFF_RET_STACK).soff;
                 break;
             }
 
