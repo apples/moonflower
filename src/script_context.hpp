@@ -178,6 +178,8 @@ struct script_context {
 
     void emit_copy(const object& dest, const object& src);
 
+    void emit_move(const object& dest, const object& src);
+
     std::int16_t emit_if(const location& loc);
 
     std::int16_t emit_jmp(const location& loc);

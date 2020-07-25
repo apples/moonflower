@@ -115,6 +115,8 @@ void disass(const moonflower::module& mod) {
             case opcode::IMUL: write_ABC("imul", instr); break;
             case opcode::IDIV: write_ABC("idiv", instr); break;
             case opcode::ICLT: write_ABC("iclt", instr); break;
+            case opcode::IADDC: write_ABC("iaddc", instr); break;
+            case opcode::ICLTC: write_ABC("icltc", instr); break;
             case opcode::FADD: write_ABC("fadd", instr); break;
             case opcode::FSUB: write_ABC("fsub", instr); break;
             case opcode::FMUL: write_ABC("fmul", instr); break;
@@ -184,6 +186,11 @@ int main(int argc, char* argv[]) try {
     }
 
 #ifdef NDEBUG
+    if (argc == 3 && argv[2] == std::string("-dump")) {
+        for (auto& mod : S.modules) {
+            disass(mod);
+        }
+    }
 #else
     for (auto& mod : S.modules) {
         disass(mod);
@@ -201,15 +208,17 @@ int main(int argc, char* argv[]) try {
 
     const auto B = clock::now();
 
-    *reinterpret_cast<int*>(&S.stack[12]) = 32;
+    *reinterpret_cast<int*>(&S.stack[12]) = 34;
     auto ret = moonflower::interp(S, *mod_idx, entry_point, sizeof(int));
 
     const auto C = clock::now();
 
+#ifdef NDEBUG
     for (int i=0; i < 100; ++i) {
-        *reinterpret_cast<int*>(&S.stack[12]) = 32;
+        *reinterpret_cast<int*>(&S.stack[12]) = 34;
         ret = moonflower::interp(S, *mod_idx, entry_point, sizeof(int));
     }
+#endif
 
     const auto D = clock::now();
 

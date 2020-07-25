@@ -413,6 +413,10 @@ void script_context::emit_copy(const object& dest, const object& src) {
     emit({opcode::CPY, dest_addr, {src_addr, value_size(dest.t)}});
 }
 
+void script_context::emit_move(const object& dest, const object& src) {
+    emit_copy(dest, src);
+}
+
 std::int16_t script_context::emit_if(const location& loc) {
     auto bool_type = get_global_type("bool");
     auto type = cur_func.active_exprs.back().type;
@@ -521,14 +525,33 @@ object script_context::eval_expr(int expr_loc, const location& loc) {
 
             auto unwind_loc = cur_func.expr_stack.size();
 
-            auto rhs_result = eval_expr(expr_loc + 1, loc);
-            auto rhs_addr = std::visit(overload {
-                [](const addresses::local& a) { return a.value; },
-                [](const addresses::data& a) -> std::int16_t { throw std::runtime_error("Not implemented."); },
-                [](const addresses::global& a) -> std::int16_t { throw std::runtime_error("Not implemented."); }
-            }, rhs_result.addr);
+            const auto& rhs_expr = *(rbegin(cur_func.active_exprs) + expr_loc + 1);
 
-            id.def->emit(*this, dest.addr, lhs_result.addr, rhs_result.addr);
+            // find constexpr rhs int value if present to use for optimization
+            auto const_int = std::optional<int>{};
+            if (id.def->emit_c_int && std::holds_alternative<expression::constant>(rhs_expr.expr)) {
+                auto& val = std::get<expression::constant>(rhs_expr.expr).val;
+                if (std::holds_alternative<int>(val)) {
+                    auto rhs_result = std::get<int>(val);
+                    using limits = std::numeric_limits<std::int16_t>;
+                    if (rhs_result >= limits::min() && rhs_result <= limits::max()) {
+                        const_int = rhs_result;
+                    }
+                }
+            }
+
+            if (const_int) {
+                id.def->emit_c_int(*this, dest.addr, lhs_result.addr, *const_int);
+            } else {
+                auto rhs_result = eval_expr(expr_loc + 1, loc);
+                auto rhs_addr = std::visit(overload {
+                    [](const addresses::local& a) { return a.value; },
+                    [](const addresses::data& a) -> std::int16_t { throw std::runtime_error("Not implemented."); },
+                    [](const addresses::global& a) -> std::int16_t { throw std::runtime_error("Not implemented."); }
+                }, rhs_result.addr);
+
+                id.def->emit(*this, dest.addr, lhs_result.addr, rhs_result.addr);
+            }
 
             pop_objects_until(unwind_loc);
 
@@ -536,17 +559,18 @@ object script_context::eval_expr(int expr_loc, const location& loc) {
         },
         [&](const expression::call& call) -> object {
             auto return_type = expr.type;
-            auto unwind_loc = cur_func.expr_stack.size();
 
             // calculate maximally-aligned return address with room for return value
-            cur_func.expr_stack.push_back({addresses::local{get_aligned_top(1, true)}, return_type});
-            auto ret_addr = get_aligned_top(alignof(std::max_align_t), true);
+            cur_func.expr_stack.push_back({addresses::local{get_aligned_top(1, false)}, return_type});
+            auto ret_addr = get_aligned_top(alignof(std::max_align_t), false);
             cur_func.expr_stack.pop_back();
 
             // calculate actual return value address
             auto result_addr = static_cast<std::int16_t>(ret_addr + get_return_value_offset(return_type));
             cur_func.expr_stack.push_back({addresses::local{result_addr}, return_type}); // return value
             auto result = cur_func.expr_stack.back();
+
+            auto unwind_loc = cur_func.expr_stack.size();
 
             // return address and return stack
             cur_func.expr_stack.push_back({addresses::local{ret_addr}, get_global_type("int")}); // return address

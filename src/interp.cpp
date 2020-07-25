@@ -1,12 +1,20 @@
 #include "interp.hpp"
 
 #include <algorithm>
-#include <iostream>
 
 #ifdef NDEBUG
 #define MOONFLOWER_DEBUG 0
 #else
 #define MOONFLOWER_DEBUG 1
+#include <iostream>
+#endif
+
+#define MOONFLOWER_PROFILE 0
+
+#if MOONFLOWER_PROFILE
+#include <chrono>
+#include <iostream>
+#include <iomanip>
 #endif
 
 namespace moonflower {
@@ -19,6 +27,27 @@ auto byte_cast(std::byte* stack, std::int16_t addr) -> T& {
     return *reinterpret_cast<T*>(stack + addr);
 }
 
+#if MOONFLOWER_PROFILE
+using clock = std::chrono::system_clock;
+struct profile_context {
+    int counts[PFCALL + 1] = {};
+    clock::duration results[PFCALL + 1] = {};
+    clock::time_point start;
+    ~profile_context() {
+        std::cout << "[PROFILE]        " <<
+            std::setw(12) << "count" << " " <<
+            std::setw(12) << "total dur" << " " <<
+            std::setw(12) << "avg dur" << "\n";
+        for (int i = 0; i < PFCALL + 1; ++i) {
+            std::cout << "[PROFILE] (" << std::setw(3) << i << "): " <<
+                std::setw(12) << counts[i] << " " <<
+                std::setw(12) << results[i].count() << " " <<
+                std::setw(12) << (counts[i] != 0 ? results[i].count()/counts[i] : 0) << "\n";
+        }
+    }
+};
+static profile_context profile_ctx;
+#endif
 interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     const instruction* text = S.modules[mod_idx].text.data();
 #if MOONFLOWER_DEBUG
@@ -68,6 +97,10 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
 
     while (true) {
         fetch();
+
+#if MOONFLOWER_PROFILE
+        profile_ctx.start = clock::now();
+#endif
 
         switch (I.OP) {
             case TERMINATE:
@@ -120,6 +153,14 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
                 break;
             case ICLT:
                 byte_cast<bool>(stack, I.A) = byte_cast<int>(stack, I.BC.B) < byte_cast<int>(stack, I.BC.C);
+                break;
+            
+            // integer constant ops
+            case IADDC:
+                byte_cast<int>(stack, I.A) = byte_cast<int>(stack, I.BC.B) + I.BC.C;
+                break;
+            case ICLTC:
+                byte_cast<bool>(stack, I.A) = byte_cast<int>(stack, I.BC.B) < I.BC.C;
                 break;
 
             // float ops
@@ -201,6 +242,11 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
             default:
                 return {-1, "invalid operation"};
         }
+
+#if MOONFLOWER_PROFILE
+        profile_ctx.results[I.OP] += clock::now() - profile_ctx.start;
+        ++profile_ctx.counts[I.OP];
+#endif
     }
 }
 

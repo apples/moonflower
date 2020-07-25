@@ -145,34 +145,6 @@ ifcase: expr <std::int16_t>{ $$ = context.emit_if(@$); } block { $$ = context.em
 ifcasedefault: '_' block
              ;
 
-/*
-switchblock: switchcase
-           | switchcase 
-           ;
-
-switchcaseseq: switchcase
-             | switchcase switchcaseseq { context.set_jmp($1, @$); $$ = $2; }
-             ;
-
-switchcase: expr <std::int16_t>{ $$ = context.emit_if(@$); } ARROW '{' block '}' { $$ = context.emit_jmp(@$); context.set_jmp($2, @$); }
-          | '_' ARROW '{' block '}' { $$ = context.emit_jmp(@$); }
-          ;
-
-switchcasedefault: '_' ARROW '{' block '}'
-                 ;
-
-ifstatementfull: ifstatement { context.set_jmp($1, @$); }
-               | ifstatement <std::int16_t>{ $$ = context.emit_jmp(@$); context.set_jmp($1, @$); } elsestatement { context.set_jmp($2, @$); }
-               ;
-
-ifstatement: IF expr <std::int16_t>{ $$ = context.emit_if(@$); } '{' block '}' { $$ = $3; }
-           ;
-
-elsestatement: ELSE '{' block '}'
-             | ELSE ifstatementfull
-             ;
-*/
-
 vardecl: VAR IDENTIFIER '=' expr { context.emit_vardecl($IDENTIFIER, @$); }
        ;
 

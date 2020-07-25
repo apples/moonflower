@@ -33,6 +33,11 @@ translation compile(state& S, const std::string& name, std::istream& source) {
             auto lhs_l = std::get<addresses::local>(lhs).value;
             auto rhs_l = std::get<addresses::local>(rhs).value;
             context.emit({opcode::IADD, dest_l, {lhs_l, rhs_l}});
+        },
+        [](script_context& context, const address& dest, const address& lhs, std::int16_t rhs) {
+            auto dest_l = std::get<addresses::local>(dest).value;
+            auto lhs_l = std::get<addresses::local>(lhs).value;
+            context.emit({opcode::IADDC, dest_l, {lhs_l, rhs}});
         }}
     };
     int_type.binops[binop::SUB] = {
@@ -42,6 +47,11 @@ translation compile(state& S, const std::string& name, std::istream& source) {
             auto lhs_l = std::get<addresses::local>(lhs).value;
             auto rhs_l = std::get<addresses::local>(rhs).value;
             context.emit({opcode::ISUB, dest_l, {lhs_l, rhs_l}});
+        },
+        [](script_context& context, const address& dest, const address& lhs, std::int16_t rhs) {
+            auto dest_l = std::get<addresses::local>(dest).value;
+            auto lhs_l = std::get<addresses::local>(lhs).value;
+            context.emit({opcode::IADDC, dest_l, {lhs_l, static_cast<std::int16_t>(-rhs)}});
         }}
     };
     int_type.binops[binop::MUL] = {
@@ -69,6 +79,11 @@ translation compile(state& S, const std::string& name, std::istream& source) {
             auto lhs_l = std::get<addresses::local>(lhs).value;
             auto rhs_l = std::get<addresses::local>(rhs).value;
             context.emit({opcode::ICLT, dest_l, {lhs_l, rhs_l}});
+        },
+        [](script_context& context, const address& dest, const address& lhs, std::int16_t rhs) {
+            auto dest_l = std::get<addresses::local>(dest).value;
+            auto lhs_l = std::get<addresses::local>(lhs).value;
+            context.emit({opcode::ICLTC, dest_l, {lhs_l, rhs}});
         }}
     };
 

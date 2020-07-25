@@ -32,6 +32,9 @@ enum opcode : std::uint8_t {
     IDIV, // A: dest, B: x, C: y
     ICLT, // A: dest, B: x, C: y
 
+    IADDC, // A: dest, B: x, C: constant
+    ICLTC, // A: dest, B: x, C: constant
+
     FADD, // A: dest, B: x, C: y
     FSUB, // A: dest, B: x, C: y
     FMUL, // A: dest, B: x, C: y
@@ -125,6 +128,7 @@ struct binop_def {
     type_ptr rhs_type;
     type_ptr return_type;
     std::function<void(script_context& context, const address& dest, const address& lhs, const address& rhs)> emit;
+    std::function<void(script_context& context, const address& dest, const address& lhs, std::int16_t rhs)> emit_c_int;
 };
 
 struct type {
