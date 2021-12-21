@@ -48,6 +48,7 @@ struct profile_context {
 };
 static profile_context profile_ctx;
 #endif
+
 interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, int retc) {
     const instruction* text = S.modules[mod_idx].text.data();
 #if MOONFLOWER_DEBUG
@@ -154,7 +155,7 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
             case ICLT:
                 byte_cast<bool>(stack, I.A) = byte_cast<int>(stack, I.BC.B) < byte_cast<int>(stack, I.BC.C);
                 break;
-            
+
             // integer constant ops
             case IADDC:
                 byte_cast<int>(stack, I.A) = byte_cast<int>(stack, I.BC.B) + I.BC.C;
@@ -201,6 +202,17 @@ interp_result interp(state& S, std::uint16_t mod_idx, std::uint16_t func_addr, i
                 text_end = text + S.modules[mod_idx].text.size();
 #endif
                 stack -= byte_cast<stack_rep>(stack, OFF_RET_STACK).soff;
+                break;
+            }
+            case LONGJMP: {
+                const auto& addr = byte_cast<program_addr>(stack, I.A);
+                mod_idx = addr.mod;
+                text = S.modules[mod_idx].text.data();
+                data = S.modules[mod_idx].data.data();
+                PC = text + addr.off;
+#if MOONFLOWER_DEBUG
+                text_end = text + S.modules[mod_idx].text.size();
+#endif
                 break;
             }
 

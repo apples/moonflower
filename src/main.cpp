@@ -125,6 +125,7 @@ void disass(const moonflower::module& mod) {
             case opcode::JMPIFN: write_ADI("jmpifn", instr); break;
             case opcode::CALL: write_AB("call", instr); break;
             case opcode::RET: write("ret"); break;
+            case opcode::LONGJMP: write_A("longjmp", instr); break;
             case opcode::CFLOAD: write_AB("cfload", instr); break;
             case opcode::CFCALL: write_A("cfcall", instr); break;
             case opcode::PFCALL: write_AB("pfcall", instr); break;
@@ -208,7 +209,7 @@ int main(int argc, char* argv[]) try {
 
     const auto B = clock::now();
 
-    *reinterpret_cast<int*>(&S.stack[12]) = 34;
+    *reinterpret_cast<int*>(&S.stack[12]) = 10;
     auto ret = moonflower::interp(S, *mod_idx, entry_point, sizeof(int));
 
     const auto C = clock::now();

@@ -9,6 +9,7 @@
 
 #include <cassert>
 #include <charconv>
+#include <optional>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -68,11 +69,15 @@ struct expression {
         int nargs;
     };
 
+    struct tailcall {
+        int nargs;
+    };
+
     struct dataload {
         std::int16_t addr;
     };
 
-    std::variant<nothing, stack_id, function, imported_function, constant, binary, call, dataload> expr;
+    std::variant<nothing, stack_id, function, imported_function, constant, binary, call, tailcall, dataload> expr;
     type_ptr type;
     category category;
 };

@@ -3,6 +3,7 @@
 #include "state.hpp"
 
 #include <cstddef>
+#include <limits>
 
 namespace moonflower {
 
@@ -275,6 +276,15 @@ int script_context::get_expr_size(int loc) const {
     auto iter = rbegin(cur_func.active_exprs) + loc;
     const auto& expr = *iter;
 
+    auto call_size = [&](const auto &c) {
+        auto size = 0;
+        for (int i = 0; i < c.nargs; ++i) {
+            size += get_expr_size(loc + 1 + size);
+        }
+        size += get_expr_size(loc + 1 + size);
+        return size;
+    };
+
     return 1 + std::visit(overload {
         [](expression::nothing) { return 0; },
         [](expression::stack_id) { return 0; },
@@ -287,12 +297,10 @@ int script_context::get_expr_size(int loc) const {
             return rhs_size + lhs_size;
         },
         [&](const expression::call& c) {
-            auto size = 0;
-            for (int i = 0; i < c.nargs; ++i) {
-                size += get_expr_size(loc + 1 + size);
-            }
-            size += get_expr_size(loc + 1 + size);
-            return size;
+            return call_size(c);
+        },
+        [&](const expression::tailcall& c) {
+            return call_size(c);
         },
         [&](const expression::dataload& dl) { return 0; },
     }, expr.expr);
@@ -325,26 +333,87 @@ std::int16_t script_context::emit(const instruction& instr) {
 }
 
 void script_context::emit_return(const location& loc) {
+    enum kind {
+        NOVAL,
+        VAL,
+        TAILCALL,
+    };
+
+    auto k = kind::NOVAL;
+
     if (!cur_func.active_exprs.empty()) {
-        auto type = cur_func.active_exprs.back().type;
+        k = kind::VAL;
+        auto& expr = cur_func.active_exprs.back();
+        auto type = expr.type;
         if (type != std::get<type::function>(cur_func.type->t).ret_type) {
             messages.emplace_back("Return type does not match", loc);
         }
-        auto result = eval_expr(0, loc);
-        clear_expr();
-        std::visit(overload {
-            [&](const addresses::local& a) {
-                emit_copy(get_return_object(), result);
-            },
-            [](const addresses::data& a) { throw std::runtime_error("Not implemented."); },
-            [](const addresses::global& a) { throw std::runtime_error("Not implemented."); }
-        }, result.addr);
+        if (std::holds_alternative<expression::call>(expr.expr)) {
+            // TODO: check locals for destructors and external references; either should prevent tail calls.
+            k = kind::TAILCALL;
+            auto& call = std::get<expression::call>(expr.expr);
+            expr.expr = expression::tailcall{call.nargs};
+        }
     }
-    for (auto i = 0; i < cur_func.local_stack.size(); ++i) {
-        auto& local = cur_func.local_stack[cur_func.local_stack.size() - i - 1].obj;
-        emit_destroy(local);
+
+    switch (k) {
+        case NOVAL:
+            for (auto i = 0; i < cur_func.local_stack.size(); ++i) {
+                auto& local = cur_func.local_stack[cur_func.local_stack.size() - i - 1].obj;
+                emit_destroy(local);
+            }
+            emit(instruction{opcode::RET});
+            break;
+        case VAL: {
+            auto result = eval_expr(0, loc);
+            clear_expr();
+            std::visit(overload {
+                [&](const addresses::local& a) {
+                    emit_move(get_return_object(), result);
+                },
+                [](const addresses::data& a) { throw std::runtime_error("Not implemented."); },
+                [](const addresses::global& a) { throw std::runtime_error("Not implemented."); }
+            }, result.addr);
+            for (auto i = 0; i < cur_func.expr_stack.size(); ++i) {
+                auto& local = cur_func.expr_stack[cur_func.expr_stack.size() - i - 1];
+                emit_destroy(local);
+            }
+            cur_func.expr_stack.clear();
+            for (auto i = 0; i < cur_func.local_stack.size(); ++i) {
+                auto& local = cur_func.local_stack[cur_func.local_stack.size() - i - 1].obj;
+                emit_destroy(local);
+            }
+            emit(instruction{opcode::RET});
+            break;
+        }
+        case TAILCALL: {
+            eval_expr(0, loc);
+            clear_expr();
+
+            // unwind locals (TODO: locals with destructors should prevent tail calls)
+            for (auto i = 0; i < cur_func.local_stack.size(); ++i) {
+                auto& local = cur_func.local_stack[cur_func.local_stack.size() - i - 1].obj;
+                emit_destroy(local);
+            }
+
+            auto locals = std::move(cur_func.local_stack);
+            auto expr_vals = std::move(cur_func.expr_stack);
+
+            for (auto i = 0; i < expr_vals.size(); ++i) {
+                auto& val = expr_vals[i];
+                auto obj = push_object(val.t, loc); // TODO: this doesn't account for ?retaddr and ?retstack
+                emit_move(obj, val);
+                emit_destroy(val);
+            }
+
+            emit(instruction{opcode::LONGJMP, cur_func.expr_stack.back().addr.value});
+
+            cur_func.local_stack = std::move(locals);
+            cur_func.expr_stack = std::move(expr_vals);
+            cur_func.expr_stack.clear();
+            break;
+        }
     }
-    emit(instruction{opcode::RET});
 }
 
 int script_context::begin_block(const location& loc) {
@@ -597,6 +666,25 @@ object script_context::eval_expr(int expr_loc, const location& loc) {
             pop_objects_until(unwind_loc, true);
 
             return result;
+        },
+        [&](const expression::tailcall& call) -> object {
+            // argument value calculation
+            auto func_loc = push_func_args(expr_loc + 1, call.nargs, loc);
+
+            // function address calculation
+            auto func_obj = eval_expr(func_loc, loc);
+
+            auto target = std::visit(overload {
+                [&](const addresses::local& a) { return a.value; },
+                [&](const addresses::data& d) -> std::int16_t {
+                    throw std::runtime_error("Not implemented");
+                },
+                [&](const addresses::global&) -> std::int16_t {
+                    throw std::runtime_error("Not implemented");
+                },
+            }, func_obj.addr);
+
+            return func_obj;
         },
         [&](const expression::dataload& dl) -> object {
             auto type = expr.type;

@@ -16,7 +16,7 @@ namespace moonflower {
 class state;
 
 enum opcode : std::uint8_t {
-    TERMINATE, // A: return code)
+    TERMINATE, // A: return code
 
     ISETC, // A: dest, DI: value
     FSETC, // A: dest, DF: value
@@ -44,6 +44,7 @@ enum opcode : std::uint8_t {
     JMPIFN, // A: stack addr of boolean value, DI: text address to jump to if false, relative to PC
     CALL, // A: stack top, B: stack addr of program_addr to call
     RET, // no args
+    LONGJMP, // A: stack addr of program_addr to jump to
 
     CFLOAD, // A: dest, B: cfunc id
     CFCALL, // A: data addr of cfunc
